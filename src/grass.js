@@ -9,7 +9,9 @@ import {
 export class Grass {
     constructor(scene) {
         this.scene = scene;
-        this.subdivisions = 200; // Optimized size for this scene
+        const isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+        this.subdivisions = isMobile ? 100 : 200; // 4x fewer blades on mobile
         this.size = 60; // Spread across a 60x60 area
         this.count = this.subdivisions * this.subdivisions;
         this.fragmentSize = this.size / this.subdivisions;
@@ -73,9 +75,10 @@ export class Grass {
         this.sizeUniform = uniform(this.size);
         this.timeNode = uniform(0.0);
 
-        this.TRAIL_SIZE = 80;        // total GPU slots
-        this.PLAYER_SLOTS = 40;       // player gets 40 slots → covers 4s at 0.1s intervals
-        this.CUBE_SLOTS = 40;       // cubes get 40 slots → covers ~6s at 0.15s intervals
+        const isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        this.TRAIL_SIZE = isMobile ? 40 : 80;
+        this.PLAYER_SLOTS = isMobile ? 20 : 40;
+        this.CUBE_SLOTS = isMobile ? 20 : 40;
         this.HOLD_TIME = 3.0;
         this.FADE_TIME = 1.0;
 

@@ -80,11 +80,18 @@ async function init() {
         requestAnimationFrame(gameLoop);
         stats.begin();
 
-        const dt = Math.min(clock.getDelta(), 0.05); // cap at 50ms
+        const dt = Math.min(clock.getDelta(), 0.1); // cap at 100ms
         const now = clock.elapsedTime;
 
-        // Physics step (Rapier expects seconds)
-        world.step();
+        // --- Physics step (Fix: Frame-rate independence) ---
+        // Rapier world.step() uses a fixed 1/60s by default. 
+        // We accumulate time to step it as many times as needed to match real time.
+        const TIMESTEP = 1 / 60;
+        this.physicsAccumulator = (this.physicsAccumulator || 0) + dt;
+        while (this.physicsAccumulator >= TIMESTEP) {
+            world.step();
+            this.physicsAccumulator -= TIMESTEP;
+        }
 
         // Player update
         player.update(dt);

@@ -12,7 +12,11 @@ export class SceneSetup {
     constructor(canvas) {
         // WebGPU Renderer
         this.renderer = new WebGPURenderer({ canvas, antialias: true, forceWebGL: false });
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        // Mobile performance: limit pixel ratio further on touch devices
+        const isMobile = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 2));
+
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
