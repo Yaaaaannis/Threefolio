@@ -13,12 +13,16 @@ import { CubeWall } from './cubeWall.js';
 import { Grass } from './grass.js';
 import { state, updateState } from './stateManager.js';
 import Stats from 'three/addons/libs/stats.module.js';
+import { initMobileControls } from './mobileControls.js';
 
 const CLIMB_THRESHOLD = 5; // units height to trigger ending
 
 async function init() {
     // Init Rapier WASM
     await RAPIER.init();
+
+    // Init Mobile Controls
+    initMobileControls();
 
     // Physics world (gravity down)
     const world = new RAPIER.World({ x: 0, y: -12, z: 0 });
