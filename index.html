@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WHAT REMAINS</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #000;
+      overflow: hidden;
+    }
+
+    #app {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    #ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #crossfade {
+      position: absolute;
+      inset: 0;
+      background: #fff;
+      opacity: 0;
+      transition: opacity 2s ease;
+    }
+
+    #end-text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 3s ease;
+      font-family: 'Georgia', serif;
+      font-size: 1.5rem;
+      color: #fff;
+      letter-spacing: 0.1em;
+      text-align: center;
+    }
+
+    #controls-hint {
+      position: absolute;
+      bottom: 2rem;
+      width: 100%;
+      text-align: center;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.3);
+      letter-spacing: 0.15em;
+      transition: opacity 3s ease;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app"></div>
+  <div id="ui">
+    <div id="crossfade"></div>
+    <div id="end-text">"This room was built by your behavior."</div>
+    <div id="controls-hint">ARROW KEYS — MOVE &nbsp;|&nbsp; SPACE — JUMP &nbsp;|&nbsp; E — SPAWN ECHO</div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
