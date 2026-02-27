@@ -25,7 +25,7 @@ async function init() {
     initMobileControls();
 
     // Physics world (gravity down)
-    const world = new RAPIER.World({ x: 0, y: -12, z: 0 });
+    const world = new RAPIER.World({ x: 0, y: -20, z: 0 });
 
     // Canvas
     const canvas = document.createElement('canvas');
@@ -75,6 +75,7 @@ async function init() {
     // Clock
     const clock = new THREE.Clock();
     let ending = false;
+    let physicsAccumulator = 0;
 
     function gameLoop() {
         requestAnimationFrame(gameLoop);
@@ -84,17 +85,15 @@ async function init() {
         const now = clock.elapsedTime;
 
         // --- Physics step (Fix: Frame-rate independence) ---
-        // Rapier world.step() uses a fixed 1/60s by default. 
-        // We accumulate time to step it as many times as needed to match real time.
         const TIMESTEP = 1 / 60;
-        this.physicsAccumulator = (this.physicsAccumulator || 0) + dt;
-        while (this.physicsAccumulator >= TIMESTEP) {
+        physicsAccumulator += dt;
+        while (physicsAccumulator >= TIMESTEP) {
+            // Player logic must be inside the fixed loop for consistent movement
+            player.update(TIMESTEP);
             world.step();
-            this.physicsAccumulator -= TIMESTEP;
+            physicsAccumulator -= TIMESTEP;
         }
 
-        // Player update
-        player.update(dt);
         const playerPos = player.getPosition();
 
         // State update

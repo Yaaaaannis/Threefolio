@@ -2,8 +2,8 @@
 
 import * as THREE from 'three';
 
-const SPEED = 5;          // units/s
-const JUMP_FORCE = 4;     // impulse
+const SPEED = 7;          // units/s
+const JUMP_FORCE = 6;     // increased for higher gravity
 const KEYS = {
     ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
     Space: false, KeyE: false, Enter: false, KeyF: false
@@ -148,8 +148,8 @@ export class Player {
         // Apply horizontal impulse toward target velocity
         const targetVx = dx * SPEED;
         const targetVz = dz * SPEED;
-        const impX = (targetVx - vel.x) * 0.35;
-        const impZ = (targetVz - vel.z) * 0.35;
+        const impX = (targetVx - vel.x) * 0.45;
+        const impZ = (targetVz - vel.z) * 0.45;
 
         this.rigidBody.applyImpulse({ x: impX, y: 0, z: impZ }, true);
 
@@ -193,9 +193,9 @@ export class Player {
         if (isWallGrabbing) {
             const curVel = this.rigidBody.linvel();
             // Only slow the fall - does not fully negate gravity, gives a slow slide
-            // Rapier gravity is y=-12, mass=1, so gravity impulse per frame ~ 12*dt
+            // Rapier gravity is y=-20, mass=1
             // We counteract ~80% to get a gentle downward slide
-            const antiGravity = 12 * 0.8 * dt;
+            const antiGravity = 20 * 0.8 * dt;
             // Cap downward velocity to a slow slide speed (-1.5 units/s)
             if (curVel.y < -1.5) {
                 this.rigidBody.applyImpulse({ x: 0, y: antiGravity, z: 0 }, true);
