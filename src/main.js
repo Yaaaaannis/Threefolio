@@ -107,7 +107,11 @@ async function init() {
         particleSys.update(now);
 
         // Grass update (pass player position so grass bends on contact)
-        grass.update(now, playerPos, player._onGround);
+        const cubePositions = cubeWall.cubes.map(c => {
+            const t = c.rigidBody.translation();
+            return { x: t.x, z: t.z };
+        });
+        grass.update(now, playerPos, player._onGround, cubePositions);
 
         // Wall update
         cubeWall.update();

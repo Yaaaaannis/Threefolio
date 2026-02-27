@@ -73,13 +73,17 @@ export class Grass {
         this.sizeUniform = uniform(this.size);
         this.timeNode = uniform(0.0);
 
-        this.TRAIL_SIZE = 40;
-        this.HOLD_TIME = 3.0;   // seconds grass stays bent
-        this.FADE_TIME = 1.0;   // seconds to fade back up
+        this.TRAIL_SIZE = 80;        // total GPU slots
+        this.PLAYER_SLOTS = 40;       // player gets 40 slots → covers 4s at 0.1s intervals
+        this.CUBE_SLOTS = 40;       // cubes get 40 slots → covers ~6s at 0.15s intervals
+        this.HOLD_TIME = 3.0;
+        this.FADE_TIME = 1.0;
 
-        // Trail ring buffer (CPU side)
-        this._trail = [];         // Array of { x, z, t }
+        // CPU-side ring buffers (separate so cubes never crowd out the player)
+        this._playerTrail = [];
+        this._cubeTrail = [];
         this._lastSampleTime = 0;
+        this._lastCubeSampleTime = 0;
 
         // Flat uniform arrays for the GPU (XZ positions + ages)
         const flatPos = new Array(this.TRAIL_SIZE * 2).fill(99999);   // far off screen initially
@@ -89,6 +93,13 @@ export class Grass {
         this.trailAgesNode = uniformArray(flatAges, 'float');
         this.playerRadius = uniform(1);    // Wide gradient = smooth entry
         this.playerStrength = uniform(1.2);  // Gentle bend strength
+
+        // Cube instant displacement (no trail, no memory)
+        this.CUBE_COUNT = 32;
+        const flatCubePos = new Array(this.CUBE_COUNT * 2).fill(99999);
+        this.cubePosNode = uniformArray(flatCubePos, 'float');
+        this.cubeRadius = uniform(0.8);
+        this.cubeStrength = uniform(1.0);
 
         const bladeShape = uniformArray([
             // Tip
@@ -185,6 +196,31 @@ export class Grass {
             const clampedPush = totalPush.mul(this.playerStrength).mul(tipness);
             vertexPosition.addAssign(vec3(clampedPush.x, 0, clampedPush.y));
 
+            // Cube instant displacement (no trail, no time decay)
+            const cubePush = vec2(0, 0).toVar();
+
+            Loop({ start: 0, end: this.CUBE_COUNT }, ({ i: ci }) => {
+                const cx = this.cubePosNode.element(ci.mul(2));
+                const cz = this.cubePosNode.element(ci.mul(2).add(1));
+                const cubePoint = vec2(cx, cz);
+
+                const cubeDelta = bladePosition.sub(cubePoint);
+                const cubeDist = cubeDelta.length().add(0.001);
+                const cubeSpatial = smoothstep(this.cubeRadius, float(0.0), cubeDist);
+                const cubeDir = cubeDelta.div(cubeDist);
+                const cubeContrib = cubeDir.mul(cubeSpatial);
+
+                If(cubeContrib.length().greaterThan(cubePush.length()), () => {
+                    cubePush.assign(cubeContrib);
+                });
+            });
+
+            vertexPosition.addAssign(vec3(
+                cubePush.mul(this.cubeStrength).mul(tipness).x,
+                0,
+                cubePush.mul(this.cubeStrength).mul(tipness).y
+            ));
+
             // Hide (far above or below) if outside patch
             vertexPosition.y.addAssign(hidden.mul(-100));
 
@@ -200,40 +236,73 @@ export class Grass {
         this.scene.add(this.mesh);
     }
 
-    update(time, playerPos, onGround = true) {
+    update(time, playerPos, onGround = true, cubePositions = null) {
         this.timeNode.value = time * 2.0;
 
         if (!playerPos) return;
 
-        const SAMPLE_INTERVAL = 0.1; // seconds
-        const totalTime = this.HOLD_TIME + this.FADE_TIME; // 4s max age
+        const SAMPLE_INTERVAL = 0.1;
+        const CUBE_SAMPLE_INTERVAL = 0.15;  // slightly less frequent for cubes
+        const totalTime = this.HOLD_TIME + this.FADE_TIME;
 
-        // Only sample footsteps when the player is on the ground
+        // --- Player footsteps (only when grounded) ---
         if (onGround && time - this._lastSampleTime > SAMPLE_INTERVAL) {
             this._lastSampleTime = time;
-            this._trail.push({ x: playerPos.x, z: playerPos.z, t: time });
-
-            // Remove entries too old to matter
-            this._trail = this._trail.filter(e => (time - e.t) < totalTime + 0.2);
-
-            // Keep only TRAIL_SIZE most recent
-            if (this._trail.length > this.TRAIL_SIZE) {
-                this._trail = this._trail.slice(-this.TRAIL_SIZE);
+            this._playerTrail.push({ x: playerPos.x, z: playerPos.z, t: time });
+            this._playerTrail = this._playerTrail.filter(e => (time - e.t) < totalTime + 0.2);
+            if (this._playerTrail.length > this.PLAYER_SLOTS) {
+                this._playerTrail = this._playerTrail.slice(-this.PLAYER_SLOTS);
             }
         }
 
-        // Upload the trail to the GPU uniform arrays
-        for (let i = 0; i < this.TRAIL_SIZE; i++) {
-            const entry = this._trail[i];
-            if (entry) {
-                this.trailPosNode.array[i * 2] = entry.x;
-                this.trailPosNode.array[i * 2 + 1] = entry.z;
-                this.trailAgesNode.array[i] = time - entry.t;
-            } else {
-                this.trailPosNode.array[i * 2] = 99999;
-                this.trailPosNode.array[i * 2 + 1] = 99999;
-                this.trailAgesNode.array[i] = 9999;
+        // --- Cube footsteps: only record when a cube has moved significantly ---
+        // This avoids flooding the buffer with stationary entries
+        const MOVE_THRESHOLD_SQ = 0.09; // 0.3 units squared
+        if (cubePositions) {
+            if (!this._cubeLastPos) {
+                this._cubeLastPos = cubePositions.map(c => ({ x: c.x, z: c.z }));
             }
+            for (let i = 0; i < cubePositions.length; i++) {
+                const cube = cubePositions[i];
+                const last = this._cubeLastPos[i];
+                const dx = cube.x - last.x;
+                const dz = cube.z - last.z;
+                if (dx * dx + dz * dz > MOVE_THRESHOLD_SQ) {
+                    // Record the OLD position as a footprint (where it was)
+                    this._cubeTrail.push({ x: last.x, z: last.z, t: time });
+                    this._cubeLastPos[i] = { x: cube.x, z: cube.z };
+                }
+            }
+            this._cubeTrail = this._cubeTrail.filter(e => (time - e.t) < totalTime + 0.2);
+            if (this._cubeTrail.length > this.CUBE_SLOTS) {
+                this._cubeTrail = this._cubeTrail.slice(-this.CUBE_SLOTS);
+            }
+        }
+
+        // --- GPU upload: player entries first, cubes get whatever is left ---
+        let gpuSlot = 0;
+
+        // 1. Player trail gets priority — fill from the start
+        for (let i = 0; i < this._playerTrail.length && gpuSlot < this.TRAIL_SIZE; i++, gpuSlot++) {
+            const e = this._playerTrail[i];
+            this.trailPosNode.array[gpuSlot * 2] = e.x;
+            this.trailPosNode.array[gpuSlot * 2 + 1] = e.z;
+            this.trailAgesNode.array[gpuSlot] = time - e.t;
+        }
+
+        // 2. Fill remaining slots with cube trail entries
+        for (let j = 0; j < this._cubeTrail.length && gpuSlot < this.TRAIL_SIZE; j++, gpuSlot++) {
+            const e = this._cubeTrail[j];
+            this.trailPosNode.array[gpuSlot * 2] = e.x;
+            this.trailPosNode.array[gpuSlot * 2 + 1] = e.z;
+            this.trailAgesNode.array[gpuSlot] = time - e.t;
+        }
+
+        // 3. Zero-out any remaining unused slots
+        for (; gpuSlot < this.TRAIL_SIZE; gpuSlot++) {
+            this.trailPosNode.array[gpuSlot * 2] = 99999;
+            this.trailPosNode.array[gpuSlot * 2 + 1] = 99999;
+            this.trailAgesNode.array[gpuSlot] = 9999;
         }
 
         this.trailPosNode.needsUpdate = true;
