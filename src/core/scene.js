@@ -56,6 +56,9 @@ export class SceneSetup {
 
         // Resize
         window.addEventListener('resize', () => this._onResize());
+
+        // Camera Modes
+        this.cameraMode = 'player'; // 'player' or 'topdown'
     }
 
     _setupLights() {
@@ -89,19 +92,38 @@ export class SceneSetup {
     }
 
     /**
-     * Update camera and player light to follow player.
-     * @param {THREE.Vector3} playerPos
+     * @param {'player'|'topdown'} mode
+     */
+    setCameraMode(mode) {
+        this.cameraMode = mode;
+    }
+
+    /**
+     * Update camera and player light to follow a target.
+     * @param {THREE.Vector3} targetPos
      * @param {number} energy
      * @param {number} dt
      */
-    update(playerPos, energy, dt) {
+    update(targetPos, energy, dt) {
         // Smooth camera follow
-        this._camTarget.lerp(playerPos, 0.08);
-        this.camera.position.copy(this._camTarget).add(this._camOffset);
-        this.camera.lookAt(this._camTarget);
+        this._camTarget.lerp(targetPos, 0.08);
 
-        // Player light follows player
-        this.playerLight.position.set(playerPos.x, playerPos.y + 3.5, playerPos.z);
+        if (this.cameraMode === 'player') {
+            this.camera.position.copy(this._camTarget).add(this._camOffset);
+            this.camera.lookAt(this._camTarget);
+        } else if (this.cameraMode === 'topdown') {
+            // Place camera directly above target
+            const topDownOffset = new THREE.Vector3(0, 30, 0); // High up
+            this.camera.position.copy(this._camTarget).add(topDownOffset);
+
+            // Look straight down (with a tiny z offset to avoid up-vector singularity)
+            const lookTarget = this._camTarget.clone();
+            lookTarget.z -= 0.01;
+            this.camera.lookAt(lookTarget);
+        }
+
+        // Light follows target
+        this.playerLight.position.set(targetPos.x, targetPos.y + 3.5, targetPos.z);
     }
 
     _onResize() {

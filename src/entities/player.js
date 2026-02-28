@@ -40,18 +40,15 @@ export class Player {
         // Position fist in front of the body
         this.fist.position.set(0, 0, 0.4);
 
+        // Enable real shadows
+        this.body.castShadow = true;
+        this.capsTop.castShadow = true;
+        this.capsBot.castShadow = true;
+        this.fist.castShadow = true;
+
         this.mesh = new THREE.Group();
         this.mesh.add(this.body, this.capsTop, this.capsBot, this.fist);
-        this.mesh.castShadow = true;
         scene.add(this.mesh);
-
-        // Drop shadow blob on floor
-        const shadowGeo = new THREE.CircleGeometry(0.32, 16);
-        const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false });
-        this.shadowBlob = new THREE.Mesh(shadowGeo, shadowMat);
-        this.shadowBlob.rotation.x = -Math.PI / 2;
-        this.shadowBlob.position.y = 0.01;
-        scene.add(this.shadowBlob);
 
         // --- Rapier rigid body ---
         const rbDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -80,6 +77,9 @@ export class Player {
         this._spaceReady = true;  // true means Space has been released since last jump
         this._punchCooldown = 0;
         this._punchAnimation = 0;
+
+        // Possession state
+        this.isFrozen = false;
     }
 
     /**
@@ -119,10 +119,12 @@ export class Player {
 
         // Build move direction in world XZ
         let dx = 0, dz = 0;
-        if (KEYS.ArrowUp) dz -= 1;
-        if (KEYS.ArrowDown) dz += 1;
-        if (KEYS.ArrowLeft) dx -= 1;
-        if (KEYS.ArrowRight) dx += 1;
+        if (!this.isFrozen) {
+            if (KEYS.ArrowUp) dz -= 1;
+            if (KEYS.ArrowDown) dz += 1;
+            if (KEYS.ArrowLeft) dx -= 1;
+            if (KEYS.ArrowRight) dx += 1;
+        }
 
         // Normalize direction
         let len = Math.sqrt(dx * dx + dz * dz);
@@ -210,14 +212,14 @@ export class Player {
         }
 
         // Regular jump — only if Space freshly pressed AND on ground
-        if (KEYS.Space && this._spaceReady && this._onGround && this._jumpCooldown === 0) {
+        if (!this.isFrozen && KEYS.Space && this._spaceReady && this._onGround && this._jumpCooldown === 0) {
             this.rigidBody.applyImpulse({ x: 0, y: JUMP_FORCE, z: 0 }, true);
             this._jumpCooldown = 0.35;
             this._spaceReady = false;
         }
 
         // ═══ WALL JUMP: launch player toward the OPPOSITE wall ═══
-        if (KEYS.Space && this._spaceReady && isWallGrabbing) {
+        if (!this.isFrozen && KEYS.Space && this._spaceReady && isWallGrabbing) {
             // Wipe current velocity for a clean controlled launch
             this.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
             const wj = this._WALL_JUMP_FORCE;
@@ -232,7 +234,7 @@ export class Player {
         }
 
         // Handle Punch (KeyF)
-        if (KEYS.KeyF && this._punchCooldown <= 0) {
+        if (!this.isFrozen && KEYS.KeyF && this._punchCooldown <= 0) {
             this._punchCooldown = 0.5; // Half second cooldown
             this._punchAnimation = 0.15; // Animation duration
 
@@ -309,7 +311,7 @@ export class Player {
 
         // Manual ghost spawn triggering
         this.wantsToSpawnGhost = false;
-        if (KEYS.KeyE) {
+        if (!this.isFrozen && KEYS.KeyE) {
             this.wantsToSpawnGhost = true;
             KEYS.KeyE = false; // "Consume" the keypress so it only triggers once per press
         }
@@ -317,7 +319,6 @@ export class Player {
         // Sync mesh
         const newPos = this.rigidBody.translation();
         this.mesh.position.set(newPos.x, newPos.y, newPos.z);
-        this.shadowBlob.position.set(newPos.x, 0.01, newPos.z);
 
         // Rotate mesh toward movement direction
         if (len > 0) {
