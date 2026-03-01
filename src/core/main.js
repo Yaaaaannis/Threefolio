@@ -12,6 +12,7 @@ import { ParticleSystem } from '../systems/particleSystem.js';
 import { CubeWall } from '../environment/cubeWall.js';
 import { Grass } from '../environment/grass.js';
 import { Chess } from '../entities/chess.js';
+import { FollowerSphere } from '../entities/followerSphere.js';
 import { ChessZone } from '../environment/chessZone.js';
 import { state, updateState } from '../core/stateManager.js';
 import Stats from 'three/addons/libs/stats.module.js';
@@ -47,6 +48,10 @@ async function init() {
     const spawnerZone = new SpawnerZone(scene, RAPIER, world);
     const particleSys = new ParticleSystem(scene);
     const grass = new Grass(scene);
+
+    // Follower Sphere
+    const followerPos = new THREE.Vector3(5, 1.5, 0);
+    const followerSphere = new FollowerSphere(scene, followerPos);
 
     // Chess piece (spawned slightly above the floor and close to the player origin)
     const chessPosition = new THREE.Vector3(-30, 0, 0);
@@ -170,6 +175,9 @@ async function init() {
             return { x: t.x, z: t.z };
         });
         grass.update(now, targetPos, player._onGround, cubePositions);
+
+        // Follower Sphere update
+        followerSphere.update(now, playerPos, dt);
 
         // Zone update for the chess mini-game
         chessZone.update(playerPos);
