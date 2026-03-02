@@ -138,13 +138,36 @@ export class Chess {
         });
     }
 
-    update() {
-        // Synchronize all dynamic pieces
+    update(dt = 1 / 60) {
+        const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
+        const GRAVITY = 20;
+
+        // Synchronize all dynamic pieces and apply spherical gravity
         for (const p of this.pieces) {
             const t = p.body.translation();
             const r = p.body.rotation();
+
+            // Surface normal
+            const pos3 = new THREE.Vector3(t.x, t.y, t.z);
+            const upNormal = new THREE.Vector3().subVectors(pos3, PLANET_CENTER).normalize();
+
+            // Apply gravity toward planet center
+            const gImp = upNormal.clone().multiplyScalar(-GRAVITY * dt);
+            p.body.applyImpulse({ x: gImp.x, y: gImp.y, z: gImp.z }, true);
+
+            // Sync mesh position
             p.mesh.position.set(t.x, t.y, t.z);
-            p.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+
+            // If body is not rotation-locked, use physics rotation directly
+            // Otherwise, align mesh upright with surface normal
+            if (p === this.blackQueen) {
+                const uprightQuat = new THREE.Quaternion().setFromUnitVectors(
+                    new THREE.Vector3(0, 1, 0), upNormal
+                );
+                p.mesh.quaternion.copy(uprightQuat);
+            } else {
+                p.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+            }
         }
     }
 

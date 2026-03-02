@@ -6,10 +6,10 @@ export class FollowerSphere {
      * @param {THREE.Vector3} position
      */
     constructor(scene, position) {
-        this.initialPosition = position.clone();
-
+        // Fixed orbit position: 10 units above the planet top
+        this.orbitBase = new THREE.Vector3(-8, 5, -8);
         this.mesh = new THREE.Group();
-        this.mesh.position.copy(position);
+        this.mesh.position.copy(this.orbitBase);
 
         // Main body (Sphere)
         const bodyGeo = new THREE.SphereGeometry(0.8, 32, 32);
@@ -41,6 +41,7 @@ export class FollowerSphere {
         this.rightEye.add(this.rightPupil);
         this.mesh.add(this.rightEye);
 
+        this.mesh.scale.setScalar(2);
         scene.add(this.mesh);
     }
 
@@ -52,19 +53,55 @@ export class FollowerSphere {
     update(time, playerPos, dt) {
         if (!playerPos) return;
 
-        // Subtle hover effect
-        this.mesh.position.y = this.initialPosition.y + Math.sin(time * 2) * 0.15;
+        const EYE_LIMIT = Math.PI / 4;  // 45° — eyes can track alone
+        const HEAD_START = Math.PI * 0.15; // ~100° — head starts following
+        const MAX_PUPIL = 0.10;          // max pupil displacement in socket
 
-        // Aim at player
-        const targetPoint = playerPos.clone();
-        targetPoint.y += 0.5; // Look roughly at center/head of player
+        // Hover oscillation
+        this.mesh.position.y = this.orbitBase.y + Math.sin(time * 1.5) * 1.2;
 
-        // We use a dummy object to calculate the target rotation
-        const dummy = new THREE.Object3D();
-        dummy.position.copy(this.mesh.position);
-        dummy.lookAt(targetPoint);
+        // Direction from head to player (world space)
+        const toPlayer = new THREE.Vector3()
+            .subVectors(playerPos, this.mesh.position)
+            .normalize();
 
-        // Slerp towards target lookAt rotation for smooth tracking
-        this.mesh.quaternion.slerp(dummy.quaternion, 5 * dt);
+        // Head forward in world space
+        const headForward = new THREE.Vector3(0, 0, 1)
+            .applyQuaternion(this.mesh.quaternion);
+
+        const dot = Math.min(1, Math.max(-1, headForward.dot(toPlayer)));
+        const angle = Math.acos(dot);
+
+        // ── Head rotation: only triggers when player is really off-center ──
+        if (angle > HEAD_START) {
+            const dummy = new THREE.Object3D();
+            dummy.position.copy(this.mesh.position);
+            dummy.lookAt(playerPos);
+            // Slow head follow — natural catch-up
+            this.mesh.quaternion.slerp(dummy.quaternion, 1.2 * dt);
+        }
+
+        // ── Pupil movement: project player dir into head local XY ──────────
+        // toPlayerLocal.x = right/left, .y = up/down, .z = forward/back
+        const invQuat = this.mesh.quaternion.clone().invert();
+        const toPlayerLocal = toPlayer.clone().applyQuaternion(invQuat);
+
+        // x/y components of a normalized vector are in [-1, 1]
+        // Scale linearly up to MAX_PUPIL — feel = eye rolling in socket
+        // Clamp to a circle
+        let px = toPlayerLocal.x;
+        let py = toPlayerLocal.y;
+        const circleLen = Math.sqrt(px * px + py * py);
+        if (circleLen > 1) { px /= circleLen; py /= circleLen; }
+
+        const targetPX = px * MAX_PUPIL;
+        const targetPY = py * MAX_PUPIL;
+
+        // Smooth pupil motion
+        const speed = 8 * dt;
+        this.leftPupil.position.x += (targetPX - this.leftPupil.position.x) * speed;
+        this.leftPupil.position.y += (targetPY - this.leftPupil.position.y) * speed;
+        this.rightPupil.position.x += (targetPX - this.rightPupil.position.x) * speed;
+        this.rightPupil.position.y += (targetPY - this.rightPupil.position.y) * speed;
     }
 }

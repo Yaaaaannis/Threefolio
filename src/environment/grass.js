@@ -23,6 +23,7 @@ export class Grass {
     }
 
     setGeometry() {
+        // Simple 2D XZ per blade — sphere surface Y computed in the vertex shader
         const position = new Float32Array(this.count * 3 * 2);
         const heightRandomness = new Float32Array(this.count * 3);
 
@@ -36,20 +37,14 @@ export class Grass {
                 const i3 = i * 3;
                 const i6 = i * 6;
 
-                // Center of the blade + random offset
                 const positionX = fragmentX + (Math.random() - 0.5) * this.fragmentSize;
                 const positionZ = fragmentZ + (Math.random() - 0.5) * this.fragmentSize;
 
-                position[i6] = positionX;
-                position[i6 + 1] = positionZ;
+                // All 3 blade vertices share the same XZ base
+                position[i6] = positionX; position[i6 + 1] = positionZ;
+                position[i6 + 2] = positionX; position[i6 + 3] = positionZ;
+                position[i6 + 4] = positionX; position[i6 + 5] = positionZ;
 
-                position[i6 + 2] = positionX;
-                position[i6 + 3] = positionZ;
-
-                position[i6 + 4] = positionX;
-                position[i6 + 5] = positionZ;
-
-                // Randomness factors for blade height
                 heightRandomness[i3] = Math.random();
                 heightRandomness[i3 + 1] = Math.random();
                 heightRandomness[i3 + 2] = Math.random();
@@ -61,6 +56,7 @@ export class Grass {
         this.geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 2));
         this.geometry.setAttribute('heightRandomness', new THREE.Float32BufferAttribute(heightRandomness, 1));
     }
+
 
     setMaterial() {
         this.center = uniform(new THREE.Vector2(0, 0));
@@ -130,41 +126,59 @@ export class Grass {
         });
 
         this.material.positionNode = Fn(() => {
-            // Static Blade position mapping
-            const position = attribute('position');
-            const position3 = vec3(position.x, 0, position.y);
-            const worldPosition = modelWorldMatrix.mul(position3);
-            bladePosition.assign(worldPosition.xz);
+            // position attribute: vec2 storing blade XZ
+            const position = attribute('position'); // .x = world X, .y = world Z
+            const px = position.x;
+            const pz = position.y;
 
-            // UV mapping assuming world size is this.size and centered at 0,0
-            const uvX = bladePosition.x.div(this.sizeUniform).add(0.5);
-            const uvY = float(0.5).sub(bladePosition.y.div(this.sizeUniform));
+            // --- Project base onto sphere surface ---
+            // Planet: center=(0,-50,0), radius=50
+            const PLANET_RADIUS = float(50.0);
+            const PLANET_CENTER_Y = float(-50.0);
+            const rSq = PLANET_RADIUS.mul(PLANET_RADIUS);          // 2500
+            const distSq = px.mul(px).add(pz.mul(pz));               // x²+z²
+            const sphereY = PLANET_CENTER_Y.add(rSq.sub(distSq).max(float(0.0)).sqrt());
+            const basePos = vec3(px, sphereY, pz);                    // blade root on sphere
+
+            // --- Surface normal (radially outward) ---
+            const planetCenter = vec3(0.0, -50.0, 0.0);
+            const surfaceNormal = basePos.sub(planetCenter).normalize();
+
+            bladePosition.assign(position); // XZ for trail detection UV
+
+            // UV for splatmap (flat XZ mapping)
+            const uvX = px.div(this.sizeUniform).add(0.5);
+            const uvY = float(0.5).sub(pz.div(this.sizeUniform));
             const splatUV = vec2(uvX, uvY);
-
-            // Read from the splatmap (red channel)
             const splatColor = texture(splatmapTexture, splatUV);
             const redChannel = splatColor.r;
 
-            // Hide blades where red channel is weak (< 0.1)
-            const hiddenThreshold = 0.1;
-            const hidden = step(redChannel, hiddenThreshold);
+            // Hide low-grass areas
+            const hidden = step(redChannel, float(0.1));
 
-            // Height mapping
+            // Blade height
             const height = this.bladeHeight
                 .mul(this.bladeHeightRandomness.mul(attribute('heightRandomness')).add(this.bladeHeightRandomness.oneMinus()))
-                .mul(redChannel.mul(0.8).add(0.2)); // Grass height scales with the splatmap red channel
+                .mul(redChannel.mul(0.8).add(0.2));
 
-            // Shape interpolation
+            // Shape
             const shapeX = bladeShape.element(vertexLoopIndex.mod(3).mul(2)).mul(this.bladeWidth);
             const shapeY = bladeShape.element(vertexLoopIndex.mod(3).mul(2).add(1)).mul(height);
-            const shape = vec3(shapeX, shapeY, 0);
 
-            // Vertex positioning
-            const vertexPosition = position3.add(shape);
+            // Camera-facing rotation in XZ — rotate blade width around blade-local origin,
+            // then compose with basePos + height-along-normal
+            const angleToCamera = atan(basePos.z.sub(cameraPosition.z), basePos.x.sub(cameraPosition.x)).add(-Math.PI * 0.5);
 
-            // Vertex rotation facing camera
-            const angleToCamera = atan(worldPosition.z.sub(cameraPosition.z), worldPosition.x.sub(cameraPosition.x)).add(-Math.PI * 0.5);
-            vertexPosition.xz.assign(rotateUV(vertexPosition.xz, angleToCamera, worldPosition.xz));
+            // Build the unrotated vertex offset from the blade base: (shapeX along X, shapeY along surfaceNormal)
+            // Then rotate the XZ components around the blade base (match original code pattern)
+            const vertexWithShape = basePos.add(surfaceNormal.mul(shapeY)).toVar(); // add height along normal first
+            // The original code: rotateUV(vertexXZ, angle, worldXZ) which is rotate2d(vert-world, angle) + world
+            // = rotate2d(shapeX_offset, angle) + worldXZ. We do the same, but in our sphere world:
+            const widthOffset = vec2(shapeX, float(0.0));             // blade width in local space
+            const rotatedWidth = rotateUV(widthOffset, angleToCamera, vec2(float(0.0), float(0.0))); // rotate around origin
+            vertexWithShape.addAssign(vec3(rotatedWidth.x, float(0.0), rotatedWidth.y)); // add to world XZ
+
+            const vertexPosition = vertexWithShape;
 
             // // Procedural Wind Effect (breezy sine waves) — DISABLED
             // const windStrength = tipness.mul(height).mul(0.3);

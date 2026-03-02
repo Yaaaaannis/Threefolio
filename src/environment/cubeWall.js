@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
+const GRAVITY = 20;
+
 export class CubeWall {
     /**
      * @param {THREE.Scene} scene
@@ -40,8 +43,11 @@ export class CubeWall {
                 mesh.position.set(posX, posY, posZ);
                 this.scene.add(mesh);
 
-                // Physics body
-                const rbDesc = this.RAPIER.RigidBodyDesc.dynamic().setTranslation(posX, posY, posZ);
+                // Physics body — spawn on sphere surface
+                // Convert flat startPos to a surface-aligned position
+                const spawnDir = new THREE.Vector3(posX, posY, posZ).sub(PLANET_CENTER).normalize();
+                const surfacePos = PLANET_CENTER.clone().add(spawnDir.multiplyScalar(50 + 0.5 + r * cubeSize));
+                const rbDesc = this.RAPIER.RigidBodyDesc.dynamic().setTranslation(surfacePos.x, surfacePos.y, surfacePos.z);
                 const rigidBody = this.world.createRigidBody(rbDesc);
 
                 // Physics collider
@@ -53,18 +59,29 @@ export class CubeWall {
 
                 this.world.createCollider(colDesc, rigidBody);
 
+                // Align mesh visually to surface at spawn
+                const spawnDir2 = new THREE.Vector3(posX, posY, posZ).sub(PLANET_CENTER).normalize();
+                const spawnQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), spawnDir2);
+                mesh.quaternion.copy(spawnQuat);
+
                 this.cubes.push({ mesh, rigidBody });
             }
         }
     }
 
-    update() {
-        // Sync visual meshes with physics bodies
+    update(dt = 1 / 60) {
+        // Sync visual meshes with physics bodies + apply spherical gravity
         for (const cube of this.cubes) {
             const pos = cube.rigidBody.translation();
             const rot = cube.rigidBody.rotation();
             cube.mesh.position.set(pos.x, pos.y, pos.z);
             cube.mesh.quaternion.set(rot.x, rot.y, rot.z, rot.w);
+
+            // Spherical gravity toward planet center
+            const pos3 = new THREE.Vector3(pos.x, pos.y, pos.z);
+            const upNormal = new THREE.Vector3().subVectors(pos3, PLANET_CENTER).normalize();
+            const gImp = upNormal.clone().multiplyScalar(-GRAVITY * dt);
+            cube.rigidBody.applyImpulse({ x: gImp.x, y: gImp.y, z: gImp.z }, true);
         }
     }
 }

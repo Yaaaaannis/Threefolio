@@ -14,6 +14,7 @@ import { Grass } from '../environment/grass.js';
 import { Chess } from '../entities/chess.js';
 import { FollowerSphere } from '../entities/followerSphere.js';
 import { ChessZone } from '../environment/chessZone.js';
+import { Football } from '../entities/football.js';
 import { state, updateState } from '../core/stateManager.js';
 import Stats from 'three/addons/libs/stats.module.js';
 import { initMobileControls } from '../ui/mobileControls.js';
@@ -27,8 +28,8 @@ async function init() {
     // Init Mobile Controls
     initMobileControls();
 
-    // Physics world (gravity down)
-    const world = new RAPIER.World({ x: 0, y: -20, z: 0 });
+    // Physics world (zero gravity, we apply spherical gravity manually)
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
 
     // Canvas
     const canvas = document.createElement('canvas');
@@ -63,6 +64,9 @@ async function init() {
     // Spawn a 4x4 wall of 1-unit cubes to the right of the starting position
     const wallStartPos = new THREE.Vector3(-6, 0, 8);
     const cubeWall = new CubeWall(scene, RAPIER, world, wallStartPos, 4, 4, 1.0);
+
+    // Football (soccer ball + goal post)
+    const football = new Football(scene, RAPIER, world);
 
     // Provide player with ability to emit particles using global time
     player.particleSystem = particleSys;
@@ -138,7 +142,7 @@ async function init() {
         physicsAccumulator += dt;
         while (physicsAccumulator >= TIMESTEP) {
             // Player logic must be inside the fixed loop for consistent movement
-            player.update(TIMESTEP);
+            player.update(TIMESTEP, sceneSetup.camera);
             world.step();
             physicsAccumulator -= TIMESTEP;
         }
@@ -183,13 +187,16 @@ async function init() {
         chessZone.update(playerPos);
 
         // Wall update
-        cubeWall.update();
+        cubeWall.update(TIMESTEP);
 
         // Chess update
-        chess.update();
+        chess.update(TIMESTEP);
         if (isPossessingQueen) {
             chess.moveQueen(TIMESTEP, inputState);
         }
+
+        // Football update
+        football.update(TIMESTEP);
 
         // Camera + lighting
         sceneSetup.update(targetPos, state.roomEnergy, dt);

@@ -28,7 +28,7 @@ export class SceneSetup {
         // HDRI Environment
         new RGBELoader()
             .setPath('/textures/')
-            .load('sunny_park.hdr', (texture) => {
+            .load('qwantani_moonrise_puresky_1k.hdr', (texture) => {
                 texture.mapping = THREE.EquirectangularReflectionMapping;
                 this.scene.background = texture;
                 this.scene.environment = texture;
@@ -108,17 +108,31 @@ export class SceneSetup {
         // Smooth camera follow
         this._camTarget.lerp(targetPos, 0.08);
 
+        // Spherical surface normal at camera target
+        const planetCenter = new THREE.Vector3(0, -50, 0); // Match ROOM PLANET_CENTER
+        const upNormal = new THREE.Vector3().subVectors(this._camTarget, planetCenter).normalize();
+
+        // Align camera Up vector to surface normal
+        this.camera.up.copy(upNormal);
+
+        // Calculate offset rotated to match surface normal
+        const surfaceQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), upNormal);
+
         if (this.cameraMode === 'player') {
-            this.camera.position.copy(this._camTarget).add(this._camOffset);
+            const rotatedOffset = this._camOffset.clone().applyQuaternion(surfaceQuat);
+            this.camera.position.copy(this._camTarget).add(rotatedOffset);
             this.camera.lookAt(this._camTarget);
         } else if (this.cameraMode === 'topdown') {
-            // Place camera directly above target
-            const topDownOffset = new THREE.Vector3(0, 30, 0); // High up
+            // Place camera directly above target (along surface normal)
+            const topDownOffset = upNormal.clone().multiplyScalar(30); // High up
             this.camera.position.copy(this._camTarget).add(topDownOffset);
 
-            // Look straight down (with a tiny z offset to avoid up-vector singularity)
+            // Look "straight down" relative to the normal
             const lookTarget = this._camTarget.clone();
-            lookTarget.z -= 0.01;
+            // Offset look target slightly to avoid singularities with Up vector
+            const forwardTangent = new THREE.Vector3(0, 0, -1).applyQuaternion(surfaceQuat);
+            lookTarget.add(forwardTangent.multiplyScalar(0.01));
+
             this.camera.lookAt(lookTarget);
         }
 

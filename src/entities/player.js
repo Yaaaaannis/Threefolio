@@ -1,6 +1,8 @@
 // player.js — Player mesh, top-down controller, Rapier physics
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 const SPEED = 7;          // units/s
 const JUMP_FORCE = 6;     // increased for higher gravity
@@ -22,33 +24,52 @@ export class Player {
         this.RAPIER = RAPIER;
         this.world = world;
 
-        // --- Mesh (capsule-ish: cylinder + 2 spheres) ---
-        const bodyGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.0, 12);
-        const capGeo = new THREE.SphereGeometry(0.3, 12, 6);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-
-        this.body = new THREE.Mesh(bodyGeo, mat);
-        this.capsTop = new THREE.Mesh(capGeo, mat);
-        this.capsBot = new THREE.Mesh(capGeo, mat);
-        this.capsTop.position.y = 0.5;
-        this.capsBot.position.y = -0.5;
-
-        // --- Fist ---
-        const fistGeo = new THREE.SphereGeometry(0.12, 8, 8);
-        const fistMat = new THREE.MeshStandardMaterial({ color: 0xdddddd });
-        this.fist = new THREE.Mesh(fistGeo, fistMat);
-        // Position fist in front of the body
-        this.fist.position.set(0, 0, 0.4);
-
-        // Enable real shadows
-        this.body.castShadow = true;
-        this.capsTop.castShadow = true;
-        this.capsBot.castShadow = true;
-        this.fist.castShadow = true;
-
         this.mesh = new THREE.Group();
-        this.mesh.add(this.body, this.capsTop, this.capsBot, this.fist);
         scene.add(this.mesh);
+
+        // --- Loader setup ---
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+
+        const loader = new GLTFLoader();
+        loader.setDRACOLoader(dracoLoader);
+
+        this.mixer = null;
+        this.animations = {};
+        this.currentAction = null;
+
+        loader.load('/models/soldierdraco.glb', (gltf) => {
+            const model = gltf.scene;
+            model.scale.set(1.2, 1.2, 1.2);
+            model.position.y = -0.4; // Align with ball bottom
+
+            // Shadows
+            model.traverse(node => {
+                if (node.isMesh) {
+                    node.castShadow = true;
+                    node.receiveShadow = true;
+                }
+            });
+
+            this.mesh.add(model);
+
+            // Mixer & Animations
+            this.mixer = new THREE.AnimationMixer(model);
+            console.log('Soldier animations:', gltf.animations.map(a => a.name));
+            gltf.animations.forEach(clip => {
+                this.animations[clip.name] = this.mixer.clipAction(clip);
+            });
+
+            // Set initial state
+            const mainClip = this.animations['Armature|mixamo.com|Layer0'];
+            if (mainClip) {
+                this.currentAction = mainClip;
+                this.currentAction.play();
+            } else if (this.animations['Idle']) {
+                this.currentAction = this.animations['Idle'];
+                this.currentAction.play();
+            }
+        });
 
         // --- Rapier rigid body ---
         const rbDesc = RAPIER.RigidBodyDesc.dynamic()
@@ -57,9 +78,11 @@ export class Player {
             .lockRotations(); // no tumbling
         this.rigidBody = world.createRigidBody(rbDesc);
 
-        // Capsule collider (half-height of cylinder = 0.5, radius = 0.3)
-        const colDesc = RAPIER.ColliderDesc.capsule(0.5, 0.3).setRestitution(0);
+        // Ball collider (radius = 0.4)
+        const colDesc = RAPIER.ColliderDesc.ball(0.4).setRestitution(0);
         world.createCollider(colDesc, this.rigidBody);
+
+        this.currentHeading = 0;
 
         this.prevPosition = new THREE.Vector3();
         this.speed = 0;
@@ -85,39 +108,36 @@ export class Player {
     /**
      * @param {number} dt
      */
-    update(dt) {
+    update(dt, camera) {
         this._jumpCooldown = Math.max(0, this._jumpCooldown - dt);
 
         const pos = this.rigidBody.translation();
         const vel = this.rigidBody.linvel();
 
-        // Robust grounded check using multiple short raycasts
-        // The capsule's half-height is 0.5 and radius is 0.3 (bottom is at pos.y - 0.8)
-        // We start rays slightly below the capsule to avoid self-collision
-        const originY = pos.y - 0.81;
-        const offset = 0.25; // How far out to check; slightly less than radius 0.3
+        const planetCenter = new THREE.Vector3(0, -50, 0); // Must match ROOM PLANET_CENTER
+        const pos3 = new THREE.Vector3(pos.x, pos.y, pos.z);
+        const upNormal = new THREE.Vector3().subVectors(pos3, planetCenter).normalize();
 
-        const rayOrigins = [
-            { x: pos.x, y: originY, z: pos.z },                   // Center
-            { x: pos.x + offset, y: originY, z: pos.z },          // Right
-            { x: pos.x - offset, y: originY, z: pos.z },          // Left
-            { x: pos.x, y: originY, z: pos.z + offset },          // Back
-            { x: pos.x, y: originY, z: pos.z - offset }           // Front
-        ];
+        // Apply spherical gravity (-20 units/s^2)
+        const gravityForce = upNormal.clone().multiplyScalar(-20 * dt);
+        this.rigidBody.applyImpulse({ x: gravityForce.x, y: gravityForce.y, z: gravityForce.z }, true);
 
-        const rayDir = { x: 0, y: -1, z: 0 };
+        // Robust grounded check using short raycast towards planet center
+        const rayOriginPos = pos3.clone().sub(upNormal.clone().multiplyScalar(0.35)); // Start just inside the ball
+        const rayDir = { x: -upNormal.x, y: -upNormal.y, z: -upNormal.z };
         this._onGround = false;
 
-        for (const origin of rayOrigins) {
-            const ray = new this.RAPIER.Ray(origin, rayDir);
-            const hit = this.world.castRay(ray, 0.2, true);
-            if (hit !== null && Math.abs(vel.y) < 1.0) {
-                this._onGround = true;
-                break; // If any ray hits the ground, we are grounded
-            }
+        const ray = new this.RAPIER.Ray(rayOriginPos, rayDir);
+        const hit = this.world.castRay(ray, 0.15, true);
+
+        const vel3 = new THREE.Vector3(vel.x, vel.y, vel.z);
+        const upVel = vel3.dot(upNormal);
+
+        if (hit !== null && Math.abs(upVel) < 1.0) {
+            this._onGround = true;
         }
 
-        // Build move direction in world XZ
+        // Build move direction in local tangent plane
         let dx = 0, dz = 0;
         if (!this.isFrozen) {
             if (KEYS.ArrowUp) dz -= 1;
@@ -126,110 +146,51 @@ export class Player {
             if (KEYS.ArrowRight) dx += 1;
         }
 
-        // Normalize direction
         let len = Math.sqrt(dx * dx + dz * dz);
         if (len > 0) { dx /= len; dz /= len; }
 
-        // Rotate movement vector by -45 degrees to align with isometric camera
-        // The camera is offset by sin(PI/4) and cos(PI/4).
-        // Standard 2D rotation matrix:
-        // x' = x * cos(theta) - y * sin(theta)
-        // y' = x * sin(theta) + y * cos(theta)
-        if (len > 0) {
-            const angle = -Math.PI / 4; // -45 degrees
-            const cosA = Math.cos(angle);
-            const sinA = Math.sin(angle);
+        // Camera-relative movement axes projected onto the surface tangent plane
+        // This makes controls consistent regardless of where you are on the sphere
+        const camForwardWorld = new THREE.Vector3();
+        camera.getWorldDirection(camForwardWorld);
 
-            const rotatedX = dx * cosA - dz * sinA;
-            const rotatedZ = dx * sinA + dz * cosA;
+        // Project camera forward onto tangent plane (remove the upNormal component)
+        const camForwardTangent = camForwardWorld.clone()
+            .sub(upNormal.clone().multiplyScalar(camForwardWorld.dot(upNormal)))
+            .normalize();
+        if (camForwardTangent.lengthSq() < 0.001) camForwardTangent.set(1, 0, 0); // Pole fallback
 
-            dx = rotatedX;
-            dz = rotatedZ;
-        }
+        // Camera right = forward × up (in right-handed system, this gives screen-right)
+        const camRightTangent = new THREE.Vector3().crossVectors(camForwardTangent, upNormal).normalize();
 
-        // Apply horizontal impulse toward target velocity
-        const targetVx = dx * SPEED;
-        const targetVz = dz * SPEED;
-        const impX = (targetVx - vel.x) * 0.45;
-        const impZ = (targetVz - vel.z) * 0.45;
+        // Map arrow keys to camera-relative directions:
+        // ArrowUp   → move toward the forward horizon (away from camera)
+        // ArrowDown → move toward camera
+        // ArrowLeft/Right → move along camera right
+        const moveDir = new THREE.Vector3()
+            .addScaledVector(camRightTangent, dx)    // ArrowRight (dx=1) → screen right
+            .addScaledVector(camForwardTangent, -dz); // ArrowUp (dz=-1) → -(-1)=+1 → into screen
 
-        this.rigidBody.applyImpulse({ x: impX, y: 0, z: impZ }, true);
+        if (moveDir.lengthSq() > 0) moveDir.normalize();
 
-        // Lateral wall detection (4 directions using short raycasts)
-        this._wallJumpCooldown = Math.max(0, this._wallJumpCooldown - dt);
+        const targetVel = moveDir.clone().multiplyScalar(SPEED);
+        const currentTangentVel = vel3.clone().sub(upNormal.clone().multiplyScalar(vel3.dot(upNormal)));
 
-        // Lateral wall detection — rays start just OUTSIDE the player capsule radius (0.3)
-        // to avoid detecting the player's own capsule collider as a "wall"
-        const wallRayLength = 0.35;   // detect walls from 0.35 to 0.70 units away from center
-        const capsuleRadius = 0.32;   // slightly past the 0.3 collider radius
-        const wallDirs = [
-            { x: 1, y: 0, z: 0 },
-            { x: -1, y: 0, z: 0 },
-            { x: 0, y: 0, z: 1 },
-            { x: 0, y: 0, z: -1 },
-        ];
-        this._touchingWall = false;
-        for (const dir of wallDirs) {
-            // Start ray from just outside the capsule surface
-            const rayOrigin = {
-                x: pos.x + dir.x * capsuleRadius,
-                y: pos.y,
-                z: pos.z + dir.z * capsuleRadius
-            };
-            const ray = new this.RAPIER.Ray(rayOrigin, dir);
-            // Exclude the player's own rigid body from the ray
-            const hit = this.world.castRay(ray, wallRayLength, true,
-                undefined, undefined, undefined, this.rigidBody);
-            if (hit !== null) {
-                this._touchingWall = true;
-                this._wallNormal.set(-dir.x, 0, -dir.z);
-                break;
-            }
-        }
+        // Apply horizontal impulse
+        const velDiff = targetVel.clone().sub(currentTangentVel);
+        const imp = velDiff.multiplyScalar(0.45);
+        this.rigidBody.applyImpulse({ x: imp.x, y: imp.y, z: imp.z }, true);
 
-        // Track if Space was released since last jump (prevents holding-Space infinite jump)
+        // Wall jump is temporarily disabled for spherical world refactor
+
+        // Track if Space was released since last jump
         if (!KEYS.Space) this._spaceReady = true;
 
-        // ═══ WALL GRAB: when airborne and hugging a wall, counteract gravity for slow slide ═══
-        const isWallGrabbing = this._touchingWall && !this._onGround && this._wallJumpCooldown === 0;
-        if (isWallGrabbing) {
-            const curVel = this.rigidBody.linvel();
-            // Only slow the fall - does not fully negate gravity, gives a slow slide
-            // Rapier gravity is y=-20, mass=1
-            // We counteract ~80% to get a gentle downward slide
-            const antiGravity = 20 * 0.8 * dt;
-            // Cap downward velocity to a slow slide speed (-1.5 units/s)
-            if (curVel.y < -1.5) {
-                this.rigidBody.applyImpulse({ x: 0, y: antiGravity, z: 0 }, true);
-            }
-            // Lock horizontal drift toward the wall surface so the player stays snug
-            const snugImpulse = {
-                x: -this._wallNormal.x * Math.abs(curVel.x) * 0.3,
-                y: 0,
-                z: -this._wallNormal.z * Math.abs(curVel.z) * 0.3
-            };
-            this.rigidBody.applyImpulse(snugImpulse, true);
-        }
-
-        // Regular jump — only if Space freshly pressed AND on ground
+        // Regular jump
         if (!this.isFrozen && KEYS.Space && this._spaceReady && this._onGround && this._jumpCooldown === 0) {
-            this.rigidBody.applyImpulse({ x: 0, y: JUMP_FORCE, z: 0 }, true);
+            const jumpImp = upNormal.clone().multiplyScalar(JUMP_FORCE);
+            this.rigidBody.applyImpulse({ x: jumpImp.x, y: jumpImp.y, z: jumpImp.z }, true);
             this._jumpCooldown = 0.35;
-            this._spaceReady = false;
-        }
-
-        // ═══ WALL JUMP: launch player toward the OPPOSITE wall ═══
-        if (!this.isFrozen && KEYS.Space && this._spaceReady && isWallGrabbing) {
-            // Wipe current velocity for a clean controlled launch
-            this.rigidBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
-            const wj = this._WALL_JUMP_FORCE;
-            // Strong horizontal push away from current wall + upward
-            this.rigidBody.applyImpulse({
-                x: this._wallNormal.x * wj * 3,
-                y: wj * 0.9,
-                z: this._wallNormal.z * wj * 1.2
-            }, true);
-            this._wallJumpCooldown = 0.5;
             this._spaceReady = false;
         }
 
@@ -294,19 +255,91 @@ export class Player {
             }
         }
 
-        // Update punch cooldowns and animate fist
+        // Handle Punch (KeyF)
+        if (!this.isFrozen && KEYS.KeyF && this._punchCooldown <= 0) {
+            this._punchCooldown = 0.5; // Half second cooldown
+
+            // Calculate a point just in front of the player
+            const facingAngle = this.mesh.rotation.y;
+            const forwardDir = new THREE.Vector3(Math.sin(facingAngle), 0, Math.cos(facingAngle));
+
+            const punchOrigin = new THREE.Vector3().copy(pos).add(forwardDir.clone().multiplyScalar(0.6));
+            punchOrigin.y += 0.5; // Roughly chest height
+
+            // Check for hits using a short shape cast (sphere)
+            const shapeRot = { x: 0, y: 0, z: 0, w: 1 };
+            const shapeVel = { x: forwardDir.x, y: 0, z: forwardDir.z };
+            const shape = new this.RAPIER.Ball(0.4); // 0.4 radius hit area
+
+            const hit = this.world.castShape(
+                punchOrigin, shapeRot, shapeVel, shape,
+                0.5, // Target distance
+                0.1, // Max Toi (very short cast)
+                true, // Stop at penetration
+                undefined, undefined, undefined,
+                this.rigidBody // Exclude the player's own rigid body!
+            );
+
+            if (hit !== null) {
+                const hitCollider = this.world.getCollider(hit.colliderHandle);
+                const hitBody = hitCollider.parent();
+
+                if (hitBody && hitBody.isDynamic()) {
+                    const hitPos = hitBody.translation();
+                    const impulseAmount = 20.0;
+                    const impulse = {
+                        x: forwardDir.x * impulseAmount,
+                        y: 0,
+                        z: forwardDir.z * impulseAmount
+                    };
+
+                    hitBody.applyImpulse(impulse, true);
+
+                    if (this.particleSystem && this.timeGetter) {
+                        this.particleSystem.emit(
+                            new THREE.Vector3(hitPos.x, hitPos.y, hitPos.z),
+                            null,
+                            150,
+                            this.timeGetter()
+                        );
+                    }
+                }
+            }
+        }
+
+        // Update punch cooldown (no mesh animation needed)
         if (this._punchCooldown > 0) {
             this._punchCooldown -= dt;
         }
 
-        if (this._punchAnimation > 0) {
-            this._punchAnimation -= dt;
-            // Snappy animation: move forward fast, then back
-            const t = 1.0 - (this._punchAnimation / 0.15); // 0 to 1
-            const extension = Math.sin(t * Math.PI) * 0.4; // Arc from 0 -> 0.4 -> 0
-            this.fist.position.z = 0.4 + extension;
-        } else {
-            this.fist.position.z = 0.4;
+        // Update animations
+        if (this.mixer) {
+            this.mixer.update(dt);
+
+            const mainClip = this.animations['Armature|mixamo.com|Layer0'];
+            if (mainClip) {
+                // If the model has only one clip (like a Run/Idle blend or just one action)
+                // we scale the timeScale based on whether we are moving
+                const isMoving = len > 0.1;
+                const targetTimeScale = isMoving ? 1.0 : 0.0;
+
+                // Smoothly interpolate timeScale to avoid jerky transitions
+                mainClip.setEffectiveTimeScale(THREE.MathUtils.lerp(mainClip.getEffectiveTimeScale(), targetTimeScale, 0.1));
+
+                if (!mainClip.isRunning()) mainClip.play();
+            } else {
+                // Fallback for Idle/Run state machine if they exist
+                const isMoving = len > 0.1;
+                const targetAction = isMoving ? this.animations['Run'] : this.animations['Idle'];
+
+                if (targetAction && this.currentAction !== targetAction) {
+                    const prevAction = this.currentAction;
+                    this.currentAction = targetAction;
+
+                    if (prevAction) prevAction.fadeOut(0.2);
+                    this.currentAction.reset().fadeIn(0.2).play();
+                }
+            }
         }
 
         // Manual ghost spawn triggering
@@ -316,20 +349,47 @@ export class Player {
             KEYS.KeyE = false; // "Consume" the keypress so it only triggers once per press
         }
 
-        // Sync mesh
+        // Sync mesh position
         const newPos = this.rigidBody.translation();
         this.mesh.position.set(newPos.x, newPos.y, newPos.z);
 
-        // Rotate mesh toward movement direction
+        // Rotate mesh to align with planet normal (reuse upNormal from top of update)
+        // Base quaternion to stand upright relative to the surface
+        const uprightQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), upNormal);
+
+        // Calculate heading: face the direction of movement
         if (len > 0) {
-            const targetAngle = Math.atan2(dx, dz);
-            this.mesh.rotation.y += (targetAngle - this.mesh.rotation.y) * 0.15;
+            // Use camRightTangent and camForwardTangent as the reference frame for heading
+            const camForwardWorld2 = new THREE.Vector3();
+            camera.getWorldDirection(camForwardWorld2);
+            const camFwd = camForwardWorld2.clone()
+                .sub(upNormal.clone().multiplyScalar(camForwardWorld2.dot(upNormal)))
+                .normalize();
+            if (camFwd.lengthSq() < 0.001) camFwd.set(1, 0, 0);
+            const camRight2 = new THREE.Vector3().crossVectors(camFwd, upNormal).normalize();
+
+            // Angle of moveDir relative to camera forward, around local up axis
+            const moveAngle = Math.atan2(moveDir.dot(camRight2), moveDir.dot(camFwd));
+
+            // Smooth heading interpolation with wrapping
+            let diff = moveAngle - this.currentHeading;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            this.currentHeading += diff * 0.15;
+            while (this.currentHeading < -Math.PI) this.currentHeading += Math.PI * 2;
+            while (this.currentHeading > Math.PI) this.currentHeading -= Math.PI * 2;
         }
+
+        // Apply heading rotation around local Y axis
+        const headingQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.currentHeading);
+
+        // Final rotation = uprightQuat * headingQuat
+        this.mesh.quaternion.copy(uprightQuat).multiply(headingQuat);
 
         // Compute speed for state manager
         const prev = this.prevPosition;
         const dist = Math.sqrt(
-            (newPos.x - prev.x) ** 2 + (newPos.z - prev.z) ** 2
+            (newPos.x - prev.x) ** 2 + (newPos.y - prev.y) ** 2 + (newPos.z - prev.z) ** 2
         );
         this.speed = dist / Math.max(dt, 0.001);
         this.prevPosition.set(newPos.x, newPos.y, newPos.z);

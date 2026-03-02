@@ -1,7 +1,7 @@
 // room.js — Simplified room (just a floor for now)
 
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { color, mix, texture, vec2, positionWorld, float, smoothstep } from 'three/tsl';
 
@@ -44,99 +44,27 @@ export class Room {
             metalness: 0,
         });
 
-        // Floor
+        this.PLANET_RADIUS = 50;
+        this.PLANET_CENTER = new THREE.Vector3(0, -this.PLANET_RADIUS, 0);
+
+        // Planet Mesh
         this.floorMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(BASE_HALF * 20, BASE_HALF * 20),
+            new THREE.SphereGeometry(this.PLANET_RADIUS, 128, 128),
             floorMat
         );
-        this.floorMesh.rotation.x = -Math.PI / 2;
+        this.floorMesh.position.copy(this.PLANET_CENTER);
         this.floorMesh.receiveShadow = true;
         scene.add(this.floorMesh);
 
-        // Floor physics
-        const floorDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(0, 0, 0);
+        // Planet Physics
+        const floorDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(this.PLANET_CENTER.x, this.PLANET_CENTER.y, this.PLANET_CENTER.z);
         const floorBody = world.createRigidBody(floorDesc);
-        world.createCollider(RAPIER.ColliderDesc.cuboid(BASE_HALF * 40, 0.1, BASE_HALF * 40), floorBody); // Increased size
+        world.createCollider(RAPIER.ColliderDesc.ball(this.PLANET_RADIUS), floorBody);
 
-        this._addGridFloor(scene);
-        this._loadIsland(scene);
         this._addWallJumpCorridor(scene);
     }
 
-    _loadIsland(scene) {
-        const loader = new GLTFLoader();
-        loader.load('/models/low_poly_floating_island.glb', (gltf) => {
-            const island = gltf.scene;
-
-            // Scale and position the island so the player has to jump
-            // Scale and position the island so the player has to jump
-            island.scale.set(4, 4, 4);
-            island.updateMatrixWorld(true);
-
-            // Center the island logically to ensure we can see it
-            const box = new THREE.Box3().setFromObject(island);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            console.log('Island bounds:', { center, size });
-
-            // Offset the island so its center is near where we want it,
-            // then place it a bit forward in Z.
-            island.position.x += (0 - center.x);
-            island.position.y += (0 - center.y) + 2; // top of island near Y=2
-            island.position.z += (0 - center.z) - 20; // push it forward
-
-            island.updateMatrixWorld(true);
-
-            island.traverse((child) => {
-                if (child.isMesh) {
-                    child.receiveShadow = true;
-                    child.castShadow = true;
-
-                    // Create a trimesh collider for exact physical geometry
-                    const geometry = child.geometry.clone();
-                    geometry.applyMatrix4(child.matrixWorld); // Bake exact world transform into vertices
-
-                    const vertices = geometry.attributes.position.array;
-                    let indices = geometry.index ? geometry.index.array : null;
-
-                    if (vertices.length > 0) {
-                        let colliderDesc;
-                        if (indices) {
-                            colliderDesc = this.RAPIER.ColliderDesc.trimesh(vertices, indices);
-                        } else {
-                            // If no indices, derive them
-                            const generatedIndices = new Uint32Array(vertices.length / 3);
-                            for (let i = 0; i < generatedIndices.length; i++) generatedIndices[i] = i;
-                            colliderDesc = this.RAPIER.ColliderDesc.trimesh(vertices, generatedIndices);
-                        }
-
-                        // Because vertices are baked in world space, the rigid body itself stays at the origin
-                        const rbDesc = this.RAPIER.RigidBodyDesc.fixed()
-                            .setTranslation(0, 0, 0);
-
-                        const body = this.world.createRigidBody(rbDesc);
-                        this.world.createCollider(colliderDesc, body);
-                    }
-                }
-            });
-
-            scene.add(island);
-        }, undefined, (err) => {
-            console.error('Failed to load island:', err);
-        });
-    }
-
-    _addGridFloor(scene) {
-        // Subtle grid on floor for spatial reference
-        const size = BASE_HALF * 40; // Made larger since it's now static
-        const divisions = 80;
-        const grid = new THREE.GridHelper(size, divisions, 0x000000, 0x000000);
-        grid.position.y = 0.01;
-        grid.material.opacity = 0.15;
-        grid.material.transparent = true;
-        scene.add(grid);
-        this.grid = grid;
-    }
+    // Removed _loadIsland and _addGridFloor
 
     /**
      * @param {THREE.Vector3} playerPos
