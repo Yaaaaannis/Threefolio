@@ -13,6 +13,7 @@ import { PortalZone } from '../portalZone.js';
 import { ChessZone } from '../chessZone.js';
 import { SpawnerZone } from '../spawnerZone.js';
 import { FollowerSphere } from '../../entities/followerSphere.js';
+import { Antenna } from '../../entities/antenna.js';
 
 export class HubWorld extends BaseWorld {
     constructor(onPortal) {
@@ -26,6 +27,7 @@ export class HubWorld extends BaseWorld {
         this._chessZone = null;
         this._spawnerZone = null;
         this._follower = null;
+        this._antenna = null;
     }
 
     get planetCenter() { return new THREE.Vector3(0, -50, 0); }
@@ -80,6 +82,15 @@ export class HubWorld extends BaseWorld {
         this._spawnerZone = new SpawnerZone(scene, RAPIER, rapierWorld);
         this._follower = new FollowerSphere(scene, new THREE.Vector3(-8, 5, -8));
 
+        // ── Antenna ── placed next to the football goal ────────────────────
+        // Mirror the goal position calculation from football.js
+        const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
+        const goalDir = new THREE.Vector3(-6, 100, 8).normalize();
+        const goalSurfacePos = PLANET_CENTER.clone().addScaledVector(goalDir, 50);
+        // Offset ~5 units to the side (along X) relative to the goal, lowered to surface level
+        const antennaPos = goalSurfacePos.clone().add(new THREE.Vector3(5, -79.5, 0));
+        this._antenna = new Antenna(scene, antennaPos, 1.6, Math.PI * 0.7);
+
         // Single portal near spawn — opens Galaxy Menu
         const portalDir = new THREE.Vector3(0, 50, 4).normalize();
         const portalPt = PC.clone().addScaledVector(portalDir, PR + 0.05);
@@ -104,6 +115,7 @@ export class HubWorld extends BaseWorld {
             this._chessZone?.update(playerPos);
             this._spawnerZone?.update(playerPos);
             this._follower?.update(time, playerPos, dt ?? 0.016);
+            this._antenna?.update(dt ?? 0.016);
             for (const p of this._portals) p.update(playerPos, time);
         }
     }
@@ -138,6 +150,8 @@ export class HubWorld extends BaseWorld {
             this.scene.remove(this._follower.mesh);
             this._follower.mesh.traverse(c => { c.geometry?.dispose(); c.material?.dispose(); });
         }
+        // Antenna
+        this._antenna?.dispose();
         super.dispose();
     }
 
