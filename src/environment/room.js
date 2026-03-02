@@ -2,6 +2,8 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { color, mix, texture, vec2, positionWorld, float, smoothstep } from 'three/tsl';
 
 const BASE_HALF = 20;
 
@@ -16,8 +18,28 @@ export class Room {
         this.RAPIER = RAPIER;
         this.world = world;
 
-        const floorMat = new THREE.MeshStandardMaterial({
-            color: 0x44aa44, // Green floor
+        const splatmapTexture = new THREE.TextureLoader().load('/textures/newmap.png');
+
+        // Match the grass splatmap UV scaling (size = 60)
+        const grassSize = 60.0;
+        const uvX = positionWorld.x.div(grassSize).add(0.5);
+        const uvY = float(0.5).sub(positionWorld.z.div(grassSize));
+        const splatUV = vec2(uvX, uvY);
+
+        const splatColor = texture(splatmapTexture, splatUV);
+        const greenChannel = splatColor.g;
+
+        // Smoothstep to ensure borders are in gradient, avoiding sharp breaks
+        const dirtBlend = smoothstep(0.0, 1.0, greenChannel);
+
+        const grassColor = color(0x44aa44);
+        const dirtColor = color(0x7a5c3b); // Dirt brown color
+
+        // Final color blends between green and dirt based on the splatmap
+        const finalColor = mix(grassColor, dirtColor, dirtBlend);
+
+        const floorMat = new MeshStandardNodeMaterial({
+            colorNode: finalColor,
             roughness: 0.95,
             metalness: 0,
         });

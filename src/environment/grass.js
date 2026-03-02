@@ -3,7 +3,8 @@ import { MeshStandardNodeMaterial } from 'three/webgpu';
 import {
     mul, max, step, If, output, color, sin, smoothstep, mix, float, mod,
     transformNormalToView, uniformArray, varying, vertexIndex, rotateUV, Loop,
-    cameraPosition, vec4, atan, vec3, vec2, modelWorldMatrix, Fn, attribute, uniform
+    cameraPosition, vec4, atan, vec3, vec2, modelWorldMatrix, Fn, attribute, uniform,
+    texture
 } from 'three/tsl';
 
 export class Grass {
@@ -118,6 +119,8 @@ export class Grass {
         const colorTip = color(0x339933);
         const bladeColor = mix(colorBase, colorTip, tipness);
 
+        const splatmapTexture = new THREE.TextureLoader().load('/textures/Terrain_splatmap.png');
+
         // We use MeshStandardNodeMaterial since MeshDefaultMaterial is from the user's specific project structure
         this.material = new MeshStandardNodeMaterial({
             colorNode: bladeColor,
@@ -133,20 +136,23 @@ export class Grass {
             const worldPosition = modelWorldMatrix.mul(position3);
             bladePosition.assign(worldPosition.xz);
 
-            // Procedural Terrain Noise (Low frequency for big patches)
-            const patchNoise = sin(bladePosition.x.mul(0.15))
-                .add(sin(bladePosition.y.mul(0.15)))
-                .mul(0.5).add(0.5); // Range ~0 to 1
+            // UV mapping assuming world size is this.size and centered at 0,0
+            const uvX = bladePosition.x.div(this.sizeUniform).add(0.5);
+            const uvY = float(0.5).sub(bladePosition.y.div(this.sizeUniform));
+            const splatUV = vec2(uvX, uvY);
 
-            // Hide blades outside patches
-            const hiddenThreshold = 0.4;
-            // 1.0 if patchNoise < 0.4, 0.0 otherwise
-            const hidden = step(patchNoise, hiddenThreshold);
+            // Read from the splatmap (red channel)
+            const splatColor = texture(splatmapTexture, splatUV);
+            const redChannel = splatColor.r;
+
+            // Hide blades where red channel is weak (< 0.1)
+            const hiddenThreshold = 0.1;
+            const hidden = step(redChannel, hiddenThreshold);
 
             // Height mapping
             const height = this.bladeHeight
                 .mul(this.bladeHeightRandomness.mul(attribute('heightRandomness')).add(this.bladeHeightRandomness.oneMinus()))
-                .mul(patchNoise); // Taller in the center of patches
+                .mul(redChannel.mul(0.8).add(0.2)); // Grass height scales with the splatmap red channel
 
             // Shape interpolation
             const shapeX = bladeShape.element(vertexLoopIndex.mod(3).mul(2)).mul(this.bladeWidth);
