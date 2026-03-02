@@ -5,19 +5,19 @@ import RAPIER from '@dimforge/rapier3d-compat';
 
 import { SceneSetup } from '../core/scene.js';
 import { Player } from '../entities/player.js';
-import { Room } from '../environment/room.js';
 import { EchoSystem } from '../systems/echoSystem.js';
-import { SpawnerZone } from '../environment/spawnerZone.js';
 import { ParticleSystem } from '../systems/particleSystem.js';
-import { CubeWall } from '../environment/cubeWall.js';
-import { Grass } from '../environment/grass.js';
-import { Chess } from '../entities/chess.js';
-import { FollowerSphere } from '../entities/followerSphere.js';
-import { ChessZone } from '../environment/chessZone.js';
-import { Football } from '../entities/football.js';
 import { state, updateState } from '../core/stateManager.js';
 import Stats from 'three/addons/libs/stats.module.js';
 import { initMobileControls } from '../ui/mobileControls.js';
+
+// World system
+import { WorldManager } from '../environment/worldManager.js';
+import { HubWorld } from '../environment/worlds/HubWorld.js';
+import { DesertWorld } from '../environment/worlds/DesertWorld.js';
+import { IceWorld } from '../environment/worlds/IceWorld.js';
+import { LavaWorld } from '../environment/worlds/LavaWorld.js';
+import { GalaxyMenu } from '../ui/galaxyMenu.js';
 
 const CLIMB_THRESHOLD = 5; // units height to trigger ending
 
@@ -44,29 +44,32 @@ async function init() {
 
     // Systems
     const player = new Player(scene, RAPIER, world);
-    const room = new Room(scene, RAPIER, world);
     const echoSys = new EchoSystem(scene, RAPIER, world);
-    const spawnerZone = new SpawnerZone(scene, RAPIER, world);
     const particleSys = new ParticleSystem(scene);
-    const grass = new Grass(scene);
 
-    // Follower Sphere
-    const followerPos = new THREE.Vector3(5, 1.5, 0);
-    const followerSphere = new FollowerSphere(scene, followerPos);
+    // Galaxy Menu — single portal opens this Mario-Galaxy-style selector
+    const galaxyMenu = new GalaxyMenu((key) => travelTo(key));
 
-    // Chess piece (spawned slightly above the floor and close to the player origin)
-    const chessPosition = new THREE.Vector3(-30, 0, 0);
-    const chess = new Chess(scene, RAPIER, world, chessPosition);
+    // World Manager — handles load/unload of one planet at a time
+    const worldManager = new WorldManager(scene, RAPIER, world, player);
 
-    // Chess Zone (Shifted slightly closer per request)
-    const chessZone = new ChessZone(scene, new THREE.Vector3(-22, 0.05, 0));
+    // Travel callback — triggers world switch with crossfade
+    const WORLD_MAP = {
+        hub: (onPortal) => worldManager.switchTo(HubWorld, onPortal),
+        desert: (onPortal) => worldManager.switchTo(DesertWorld, onPortal),
+        ice: (onPortal) => worldManager.switchTo(IceWorld, onPortal),
+        lava: (onPortal) => worldManager.switchTo(LavaWorld, onPortal),
+    };
+    function travelTo(key) {
+        const fn = WORLD_MAP[key];
+        if (fn) fn(onPortal);
+    }
+    function onPortal(currentKey) {
+        galaxyMenu.open(currentKey);
+    }
 
-    // Spawn a 4x4 wall of 1-unit cubes to the right of the starting position
-    const wallStartPos = new THREE.Vector3(-6, 0, 8);
-    const cubeWall = new CubeWall(scene, RAPIER, world, wallStartPos, 4, 4, 1.0);
-
-    // Football (soccer ball + goal post)
-    const football = new Football(scene, RAPIER, world);
+    // Load Hub as first world
+    await worldManager.init(HubWorld, onPortal);
 
     // Provide player with ability to emit particles using global time
     player.particleSystem = particleSys;
@@ -99,19 +102,6 @@ async function init() {
     // Listen for inputs
     window.addEventListener('keydown', (e) => {
         if (e.code in inputState) inputState[e.code] = true;
-
-        // Handle possession toggling here to avoid multiple triggers per frame
-        if (e.code === 'Enter' && chessZone.isPlayerInside && !isPossessingQueen) {
-            isPossessingQueen = true;
-            player.isFrozen = true;
-            sceneSetup.setCameraMode('topdown');
-            uiElementToggle(hint, "Press ECHAP to exit Queen Mode", true);
-        } else if (e.code === 'Escape' && isPossessingQueen) {
-            isPossessingQueen = false;
-            player.isFrozen = false;
-            sceneSetup.setCameraMode('player');
-            uiElementToggle(hint, "", false);
-        }
     });
     window.addEventListener('keyup', (e) => {
         if (e.code in inputState) inputState[e.code] = false;
@@ -160,43 +150,21 @@ async function init() {
         // Echo system
         echoSys.tick(state.elapsedTime, dt);
 
-        // Room update
-        room.update(playerPos, state.roomEnergy, dt, now);
+        // Room / world update (active world)
+        const planetCenter = worldManager.planetCenter;
+        worldManager.update(dt, playerPos, now);
 
-        // Zone update
-        spawnerZone.update(playerPos);
+        // Zone update (hub-specific zones now in worldManager.update above)
 
         // Particles update
         particleSys.update(now);
 
-        // Grass update (pass player position so grass bends on contact)
-        const targetPos = isPossessingQueen ?
-            (chess.getBlackQueen() ? chess.getBlackQueen().body.translation() : playerPos) :
-            playerPos;
+        const targetPos = playerPos;
 
-        const cubePositions = cubeWall.cubes.map(c => {
-            const t = c.rigidBody.translation();
-            return { x: t.x, z: t.z };
-        });
-        grass.update(now, targetPos, player._onGround, cubePositions);
+        // Grass update — delegated to active world (HubWorld manages its own)
+        // (world manager update above covers it)
 
-        // Follower Sphere update
-        followerSphere.update(now, playerPos, dt);
-
-        // Zone update for the chess mini-game
-        chessZone.update(playerPos);
-
-        // Wall update
-        cubeWall.update(TIMESTEP);
-
-        // Chess update
-        chess.update(TIMESTEP);
-        if (isPossessingQueen) {
-            chess.moveQueen(TIMESTEP, inputState);
-        }
-
-        // Football update
-        football.update(TIMESTEP);
+        // Follower Sphere — managed by active world (HubWorld)
 
         // Camera + lighting
         sceneSetup.update(targetPos, state.roomEnergy, dt);

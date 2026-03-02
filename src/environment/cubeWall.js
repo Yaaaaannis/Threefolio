@@ -84,4 +84,15 @@ export class CubeWall {
             cube.rigidBody.applyImpulse({ x: gImp.x, y: gImp.y, z: gImp.z }, true);
         }
     }
+
+    dispose() {
+        for (const { mesh, rigidBody } of this.cubes) {
+            this.scene.remove(mesh);
+            mesh.geometry.dispose();
+            if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
+            else mesh.material?.dispose();
+            try { this.world.removeRigidBody(rigidBody); } catch (_) { }
+        }
+        this.cubes = [];
+    }
 }

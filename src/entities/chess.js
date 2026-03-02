@@ -15,8 +15,9 @@ export class Chess {
         this.world = world;
         this.mesh = null;
         this.pieces = [];
-        this.boardSquares = []; // Store the squares
-        this.blackQueen = null; // Specific reference
+        this.boardSquares = [];
+        this._boardBodies = []; // tracked for dispose
+        this.blackQueen = null;
 
         // Input state just for the queen
         this._queenMoveCooldown = 0;
@@ -125,9 +126,10 @@ export class Chess {
                 // Save square center for grid movement
                 this.boardSquares.push(center.clone());
 
-                const rbDesc = this.RAPIER.RigidBodyDesc.fixed()
+                const rbDesc2 = this.RAPIER.RigidBodyDesc.fixed()
                     .setTranslation(center.x, center.y, center.z);
-                const body = this.world.createRigidBody(rbDesc);
+                const body = this.world.createRigidBody(rbDesc2);
+                this._boardBodies.push(body); // track for dispose
 
                 const colliderDesc = this.RAPIER.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2);
                 this.world.createCollider(colliderDesc, body);
@@ -227,5 +229,34 @@ export class Chess {
             this.blackQueen.body.setTranslation({ x: bestSquare.x, y: posVec.y + 0.5, z: bestSquare.z }, true);
             this._queenMoveCooldown = 0.25; // 250ms cooldown between hops
         }
+    }
+
+    /** Remove everything this Chess instance added to the scene and Rapier world. */
+    dispose() {
+        // Pieces were scene.attach()'d directly — remove each from scene
+        for (const { mesh, body } of this.pieces) {
+            this.scene.remove(mesh);
+            mesh.geometry?.dispose();
+            if (Array.isArray(mesh.material)) mesh.material.forEach(m => m.dispose());
+            else mesh.material?.dispose();
+            try { this.world.removeRigidBody(body); } catch (_) { }
+        }
+        // Board Rapier bodies (fixed)
+        for (const b of this._boardBodies) {
+            try { this.world.removeRigidBody(b); } catch (_) { }
+        }
+        // Board mesh (child of this.mesh)
+        if (this.mesh) {
+            this.scene.remove(this.mesh);
+            this.mesh.traverse(c => {
+                c.geometry?.dispose();
+                if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+                else c.material?.dispose();
+            });
+        }
+        this.pieces = [];
+        this._boardBodies = [];
+        this.mesh = null;
+        this.blackQueen = null;
     }
 }

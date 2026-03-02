@@ -27,6 +27,8 @@ export class Football {
         this.world = world;
         this.ballMesh = null;
         this.ballBody = null;
+        this.goalMesh = null;  // stored for dispose
+        this.goalBody = null;  // stored for dispose
         this.goalScored = false;
         this._goalCooldown = 0;
 
@@ -69,10 +71,10 @@ export class Football {
                 }
             });
 
+            this.goalMesh = goal; // store for dispose
             scene.add(goal);
 
             // Fixed physics collider so the ball can bounce off the goal
-            // Recompute box after scale/position applied
             goal.updateMatrixWorld(true);
             const worldBox = new THREE.Box3().setFromObject(goal);
             const worldSize = worldBox.getSize(new THREE.Vector3());
@@ -80,14 +82,14 @@ export class Football {
 
             const rbDesc = this.RAPIER.RigidBodyDesc.fixed()
                 .setTranslation(worldCenter.x, worldCenter.y, worldCenter.z);
-            const body = this.world.createRigidBody(rbDesc);
+            this.goalBody = this.world.createRigidBody(rbDesc);
             this.world.createCollider(
                 this.RAPIER.ColliderDesc.cuboid(
                     worldSize.x / 2,
                     worldSize.y / 2,
                     worldSize.z / 2
                 ).setFriction(0.3).setRestitution(0.4),
-                body
+                this.goalBody
             );
         }, undefined, (err) => console.error('Failed to load goal:', err));
 
@@ -284,5 +286,25 @@ export class Football {
                 this._confettiActive = false;
             }
         }
+    }
+
+    /** Remove all scene objects and Rapier bodies created by this Football instance. */
+    dispose() {
+        const removeFromScene = (obj) => {
+            if (!obj) return;
+            this.scene.remove(obj);
+            obj.traverse(c => {
+                c.geometry?.dispose();
+                if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+                else c.material?.dispose();
+            });
+        };
+        removeFromScene(this.goalMesh);
+        removeFromScene(this.ballMesh);
+        removeFromScene(this._confettiMesh);
+        if (this.goalBody) { try { this.world.removeRigidBody(this.goalBody); } catch (_) { } }
+        if (this.ballBody) { try { this.world.removeRigidBody(this.ballBody); } catch (_) { } }
+        this.goalMesh = this.ballMesh = this._confettiMesh = null;
+        this.goalBody = this.ballBody = null;
     }
 }
