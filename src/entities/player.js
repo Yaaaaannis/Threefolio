@@ -136,6 +136,23 @@ export class Player {
 
         if (hit !== null && Math.abs(upVel) < 1.0) {
             this._onGround = true;
+
+            // Dampen external impulses quickly once grounded so we don't slide forever
+            if (this._externalImpulse) {
+                this._externalImpulse.lerp(new THREE.Vector3(0, 0, 0), 10 * dt);
+                if (this._externalImpulse.lengthSq() < 0.1) this._externalImpulse = null;
+            }
+        }
+
+        // Apply external impulse (like bomb knockback)
+        if (this._externalImpulse) {
+            this.rigidBody.setLinvel({
+                x: vel.x + this._externalImpulse.x * dt * 60,
+                y: vel.y + this._externalImpulse.y * dt * 60,
+                z: vel.z + this._externalImpulse.z * dt * 60
+            }, true);
+            // Decay upward momentum so we don't fly to space
+            this._externalImpulse.y *= 0.95;
         }
 
         // Build move direction in local tangent plane
@@ -394,6 +411,22 @@ export class Player {
         );
         this.speed = dist / Math.max(dt, 0.001);
         this.prevPosition.set(newPos.x, newPos.y, newPos.z);
+    }
+
+    /**
+     * @param {THREE.Vector3} impulse - The force vector to apply
+     */
+    applyExplosionImpulse(impulse) {
+        // Player uses a kinematic-style manual velocity controller overlaying dynamic.
+        // Direct impulses get wiped out by the manual velocity set, so we store it.
+        this._externalImpulse = new THREE.Vector3(impulse.x, impulse.y, impulse.z);
+        // Add immediate upward pop
+        const v = this.rigidBody.linvel();
+        this.rigidBody.setLinvel({
+            x: v.x + impulse.x * 2,
+            y: v.y + impulse.y * 2,
+            z: v.z + impulse.z * 2
+        }, true);
     }
 
     getPosition() {

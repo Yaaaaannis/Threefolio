@@ -51,7 +51,7 @@ async function init() {
     const player = new Player(scene, RAPIER, world);
     const echoSys = new EchoSystem(scene, RAPIER, world);
     const particleSys = new ParticleSystem(scene);
-    const chatSys = TWITCH_CHANNEL ? new ChatSystem(scene, TWITCH_CHANNEL, player, sceneSetup) : null;
+    const chatSys = TWITCH_CHANNEL ? new ChatSystem(scene, TWITCH_CHANNEL, player, sceneSetup, RAPIER, world) : null;
 
     // Galaxy Menu — single portal opens this Mario-Galaxy-style selector
     const galaxyMenu = new GalaxyMenu((key) => travelTo(key));

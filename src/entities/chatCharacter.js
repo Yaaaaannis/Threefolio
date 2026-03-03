@@ -193,6 +193,7 @@ export class ChatCharacter {
         this._hopGravity = -15;
         this._yOffset = 0; // vertical offset from surface
         this._nextHopTime = Math.random() * 2 + 1; // 1 to 3 seconds until first hop
+        this._spinRemaining = 0;
 
         this._username = username;
 
@@ -243,6 +244,8 @@ export class ChatCharacter {
         this._head.scale.setScalar(0.001);
         this._sprite.scale.setScalar(0.001);
         this._spawnPhase = true;
+
+        this._parseCommands(message);
     }
 
     /** @param {number} dt */
@@ -252,6 +255,13 @@ export class ChatCharacter {
         this._wantsTexUpdate?.(); // apply newly loaded emote textures
 
         this._elapsed += dt;
+
+        // --- Handle active spin animation ---
+        if (this._spinRemaining > 0) {
+            this._spinRemaining -= dt;
+            const spinSpeed = 15; // rad per second
+            this._body.rotateY(spinSpeed * dt);
+        }
 
         // --- Logic: Wandering ---
         // Basic physics/hopping
@@ -385,6 +395,19 @@ export class ChatCharacter {
         this._head.material.opacity = 1;
         this._head.material.transparent = false;
         this._sprite.material.opacity = 1;
+
+        // Command parsing
+        this._parseCommands(message);
+    }
+
+    _parseCommands(message) {
+        const msg = message.toLowerCase().trim();
+        if (msg.includes('!jump')) {
+            this._hopVelocity = 15; // Big jump!
+        }
+        if (msg.includes('!spin')) {
+            this._spinRemaining = 1.5; // Spin for 1.5 seconds
+        }
     }
 
     dispose() {

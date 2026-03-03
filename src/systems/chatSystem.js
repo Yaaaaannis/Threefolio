@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { TwitchChat } from './twitchChat.js';
 import { ChatCharacter } from '../entities/chatCharacter.js';
+import { ChatBomb } from '../entities/chatBomb.js';
 
 const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
 const PLANET_RADIUS = 50;
@@ -28,6 +29,7 @@ export class ChatSystem {
         this._world = world;
         this._byUser = new Map();  // username → ChatCharacter (dedup)
         this._queue = [];         // buffered messages while player pos unknown
+        this._bombs = [];         // active ChatBombs
 
         this._twitch = new TwitchChat(channel, (username, message, color, emotes) => {
             const msg = message.trim().toLowerCase();
@@ -74,11 +76,21 @@ export class ChatSystem {
                 }
             }
         }
+
+        // Update active bombs
+        for (let i = this._bombs.length - 1; i >= 0; i--) {
+            const bomb = this._bombs[i];
+            if (!bomb.update(dt)) {
+                this._bombs.splice(i, 1);
+            }
+        }
     }
 
     dispose() {
         for (const char of this._byUser.values()) char.dispose();
         this._byUser.clear();
+        for (const bomb of this._bombs) bomb.dispose();
+        this._bombs = [];
         this._twitch.dispose();
         if (this._gravityTimeout) clearTimeout(this._gravityTimeout);
     }
@@ -159,6 +171,12 @@ export class ChatSystem {
             existing.updateMessage(message, color, emotes);
             // Optionally bring them closer to player when they speak again, but try not to overlap
             existing.setTarget(this._getRandomSurfacePos(playerPos, SPAWN_RADIUS));
+
+            // Check for bomb command from existing user
+            if (message.toLowerCase().trim().includes('!bomb')) {
+                this._spawnBomb(existing._body.position.clone().add(new THREE.Vector3().subVectors(existing._body.position, PLANET_CENTER).normalize().multiplyScalar(1.0)));
+            }
+
             return;
         }
 
@@ -180,6 +198,16 @@ export class ChatSystem {
             this._world
         );
         this._byUser.set(username, char);
+
+        // Check for bomb command from new user
+        if (message.toLowerCase().trim().includes('!bomb')) {
+            this._spawnBomb(surfacePos.clone().add(dir.clone().multiplyScalar(1.0)));
+        }
+    }
+
+    _spawnBomb(position) {
+        const bomb = new ChatBomb(this._scene, this._RAPIER, this._world, position, this._player);
+        this._bombs.push(bomb);
     }
 
     /**
