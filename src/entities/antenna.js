@@ -1,5 +1,5 @@
 // antenna.js — Decorative antenna GLB placed in the Hub World.
-// The mesh named "animated-part" spins continuously on its local Y axis.
+// Manually rotates the node named "animation" (child of Cylinder.003) on its Z axis.
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -8,23 +8,28 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 export class Antenna {
     /**
      * @param {THREE.Scene} scene
-     * @param {THREE.Vector3} [position] - where to place the antenna
-     * @param {number} [scale] - uniform scale (default 1)
-     * @param {number} [rotationSpeed] - radians/second for the spinning part (default Math.PI)
-     * @param {THREE.Quaternion|null} [quaternion] - orientation to align root with surface normal
+     * @param {THREE.Vector3} [position]
+     * @param {number} [scale]
+     * @param {number} [animationSpeed] - timeScale for the animation clip (default 1)
+     * @param {THREE.Quaternion|null} [quaternion]
+     * @param {*} [RAPIER]
+     * @param {*} [rapierWorld]
      */
-    constructor(scene, position = new THREE.Vector3(3, 0, 3), scale = 1, rotationSpeed = Math.PI, quaternion = null) {
+    constructor(scene, position = new THREE.Vector3(0, 0, 0), scale = 1, rotationSpeed = Math.PI * 0.7, quaternion = null, RAPIER = null, rapierWorld = null) {
         this._scene = scene;
         this._root = null;
-        this._animatedPart = null;
+        this._animatedPart = null; // the node named "animation" under Cylinder.003
         this._rotationSpeed = rotationSpeed;
+        this._body = null;
+        this._RAPIER = RAPIER;
+        this._rapierWorld = rapierWorld;
 
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
 
         const loader = new GLTFLoader();
         loader.setDRACOLoader(dracoLoader);
-        loader.load('/models/antenna.glb', (gltf) => {
+        loader.load('/models/Antenna2.glb', (gltf) => {
             this._root = gltf.scene;
             this._root.scale.setScalar(scale);
             this._root.position.copy(position);
@@ -35,24 +40,41 @@ export class Antenna {
                     node.castShadow = true;
                     node.receiveShadow = true;
                 }
-                // Find the animated part regardless of capitalisation (Blender exports "Animated-part")
-                if (node.name.toLowerCase() === 'animated-part') {
+            });
+
+            // Find the node named "animation" (mesh child of Cylinder.003)
+            this._root.traverse(node => {
+                if (node.name.toLowerCase() === 'animation') {
                     this._animatedPart = node;
                 }
             });
-
             if (!this._animatedPart) {
-                console.warn('[Antenna] No child named "animated-part" found in antenna.glb');
+                console.warn('[Antenna] No node named "animation" found in Antenna2.glb');
             }
 
             scene.add(this._root);
+
+            // ── Physics collider ──────────────────────────────────────────
+            if (RAPIER && rapierWorld) {
+                this._root.updateMatrixWorld(true);
+                const box = new THREE.Box3().setFromObject(this._root);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+
+                const rbDesc = RAPIER.RigidBodyDesc.fixed()
+                    .setTranslation(center.x, center.y, center.z);
+                this._body = rapierWorld.createRigidBody(rbDesc);
+                rapierWorld.createCollider(
+                    RAPIER.ColliderDesc.cuboid(size.x / 2, size.y / 2, size.z / 2)
+                        .setFriction(0.5)
+                        .setRestitution(0.1),
+                    this._body
+                );
+            }
         });
     }
 
-    /**
-     * Call every frame.
-     * @param {number} dt - delta time in seconds
-     */
+    /** @param {number} dt */
     update(dt) {
         if (this._animatedPart) {
             this._animatedPart.rotation.z += this._rotationSpeed * dt;
@@ -73,7 +95,10 @@ export class Antenna {
                 }
             });
             this._root = null;
-            this._animatedPart = null;
+        }
+        if (this._body && this._rapierWorld) {
+            try { this._rapierWorld.removeRigidBody(this._body); } catch (_) { }
+            this._body = null;
         }
     }
 }

@@ -14,6 +14,7 @@ import { ChessZone } from '../chessZone.js';
 import { SpawnerZone } from '../spawnerZone.js';
 import { FollowerSphere } from '../../entities/followerSphere.js';
 import { Antenna } from '../../entities/antenna.js';
+import { SocialZone } from '../socialZone.js';
 
 export class HubWorld extends BaseWorld {
     constructor(onPortal) {
@@ -28,6 +29,7 @@ export class HubWorld extends BaseWorld {
         this._spawnerZone = null;
         this._follower = null;
         this._antenna = null;
+        this._socialZone = null;
     }
 
     get planetCenter() { return new THREE.Vector3(0, -50, 0); }
@@ -82,14 +84,26 @@ export class HubWorld extends BaseWorld {
         this._spawnerZone = new SpawnerZone(scene, RAPIER, rapierWorld);
         this._follower = new FollowerSphere(scene, new THREE.Vector3(-8, 5, -8));
 
-        // ── Antenna ── placed next to the football goal ────────────────────
-        // Mirror the goal position calculation from football.js
-        const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
-        const goalDir = new THREE.Vector3(-6, 100, 8).normalize();
-        const goalSurfacePos = PLANET_CENTER.clone().addScaledVector(goalDir, 50);
-        // Offset ~5 units to the side (along X) relative to the goal, lowered to surface level
-        const antennaPos = goalSurfacePos.clone().add(new THREE.Vector3(5, -79.5, 0));
-        this._antenna = new Antenna(scene, antennaPos, 1.6, Math.PI * 0.7);
+        // ── Antenna ── placed at hub spawn (top of sphere, surface normal = Y up) ─
+        const antennaPos = new THREE.Vector3(-14, -2.9, -10);
+        // Surface normal = direction from planet center to antenna position
+        const antennaSurfaceNormal = new THREE.Vector3()
+            .subVectors(antennaPos, new THREE.Vector3(0, -50, 0))
+            .normalize();
+        const uprightQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), antennaSurfaceNormal);
+        const spinQuat = new THREE.Quaternion().setFromAxisAngle(antennaSurfaceNormal, Math.PI / 6); // 30° around surface normal
+        const antennaQuat = spinQuat.multiply(uprightQuat);
+        this._antenna = new Antenna(scene, antennaPos, 2.5, Math.PI * 0.8, antennaQuat, RAPIER, rapierWorld);
+
+        // ── Social Media Zone ── in front of the antenna ──────────────────
+        // Offset from antenna position along a tangent so it sits ~3 units in front
+        const antennaWorldPos = new THREE.Vector3(-12, -1.7, -2);
+        const socialNormal = new THREE.Vector3().subVectors(antennaWorldPos, PC).normalize();
+        // "Forward" tangent relative to the antenna position (along -Z world projected on surface)
+        const tangent = new THREE.Vector3(0, 0, -1);
+        tangent.sub(socialNormal.clone().multiplyScalar(tangent.dot(socialNormal))).normalize();
+        const socialPos = antennaWorldPos.clone().addScaledVector(tangent, 3.5).addScaledVector(socialNormal, 0.05);
+        this._socialZone = new SocialZone(scene, socialPos);
 
         // Single portal near spawn — opens Galaxy Menu
         const portalDir = new THREE.Vector3(0, 50, 4).normalize();
@@ -116,6 +130,7 @@ export class HubWorld extends BaseWorld {
             this._spawnerZone?.update(playerPos);
             this._follower?.update(time, playerPos, dt ?? 0.016);
             this._antenna?.update(dt ?? 0.016);
+            this._socialZone?.update(dt ?? 0.016, playerPos, time);
             for (const p of this._portals) p.update(playerPos, time);
         }
     }
@@ -152,6 +167,8 @@ export class HubWorld extends BaseWorld {
         }
         // Antenna
         this._antenna?.dispose();
+        // Social Zone
+        this._socialZone?.dispose();
         super.dispose();
     }
 
