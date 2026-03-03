@@ -7,6 +7,7 @@ import { SceneSetup } from '../core/scene.js';
 import { Player } from '../entities/player.js';
 import { EchoSystem } from '../systems/echoSystem.js';
 import { ParticleSystem } from '../systems/particleSystem.js';
+import { ChatSystem } from '../systems/chatSystem.js';
 import { state, updateState } from '../core/stateManager.js';
 import Stats from 'three/addons/libs/stats.module.js';
 import { initMobileControls } from '../ui/mobileControls.js';
@@ -20,6 +21,10 @@ import { LavaTheme } from '../environment/themes/LavaTheme.js';
 import { GalaxyMenu } from '../ui/galaxyMenu.js';
 
 const CLIMB_THRESHOLD = 5; // units height to trigger ending
+
+// ── Twitch integration ────────────────────────────────────────────────────────
+// Set to your Twitch channel name (lowercase, no #). Leave empty to disable.
+const TWITCH_CHANNEL = 'yaaaannis_dev';  // e.g. 'shroud' or 'your_channel'
 
 async function init() {
     // Init Rapier WASM
@@ -46,6 +51,7 @@ async function init() {
     const player = new Player(scene, RAPIER, world);
     const echoSys = new EchoSystem(scene, RAPIER, world);
     const particleSys = new ParticleSystem(scene);
+    const chatSys = TWITCH_CHANNEL ? new ChatSystem(scene, TWITCH_CHANNEL) : null;
 
     // Galaxy Menu — single portal opens this Mario-Galaxy-style selector
     const galaxyMenu = new GalaxyMenu((key) => travelTo(key));
@@ -155,6 +161,9 @@ async function init() {
         worldManager.update(dt, playerPos, now);
 
         // Zone update (hub-specific zones now in worldManager.update above)
+
+        // Twitch chat characters
+        if (chatSys) chatSys.update(dt, playerPos);
 
         // Particles update
         particleSys.update(now);
