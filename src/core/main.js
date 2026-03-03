@@ -121,8 +121,9 @@ async function init() {
         element.style.transition = 'opacity 0.3s';
     }
 
-    // Clock
-    const clock = new THREE.Clock();
+    // Timer (replaces deprecated Clock)
+    const timer = new THREE.Timer();
+    timer.connect(document); // Handle tab switching politely
     let ending = false;
     let physicsAccumulator = 0;
 
@@ -130,8 +131,9 @@ async function init() {
         requestAnimationFrame(gameLoop);
         stats.begin();
 
-        const dt = Math.min(clock.getDelta(), 0.1); // cap at 100ms
-        const now = clock.elapsedTime;
+        timer.update();
+        const dt = Math.min(timer.getDelta(), 0.1); // cap at 100ms
+        const now = timer.getElapsed();
 
         // --- Physics step (Fix: Frame-rate independence) ---
         const TIMESTEP = 1 / 60;

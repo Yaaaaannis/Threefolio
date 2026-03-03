@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { WebGPURenderer } from 'three/webgpu';
-import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 
 const ISO_ANGLE = Math.PI / 4;      // 45° tilt from horizontal
 const CAM_DISTANCE = 18;
@@ -26,7 +26,7 @@ export class SceneSetup {
         this.scene = new THREE.Scene();
 
         // HDRI Environment
-        new RGBELoader()
+        new HDRLoader()
             .setPath('/textures/')
             .load('qwantani_moonrise_puresky_1k.hdr', (texture) => {
                 texture.mapping = THREE.EquirectangularReflectionMapping;

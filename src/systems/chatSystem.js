@@ -24,7 +24,7 @@ export class ChatSystem {
         this._byUser = new Map();  // username → ChatCharacter (dedup)
         this._queue = [];         // buffered messages while player pos unknown
 
-        this._twitch = new TwitchChat(channel, (username, message, color) => {
+        this._twitch = new TwitchChat(channel, (username, message, color, emotes) => {
             const msg = message.trim().toLowerCase();
             if (msg === '!gravité') {
                 this._triggerLowGravity();
@@ -33,7 +33,7 @@ export class ChatSystem {
             } else if (msg === '!night') {
                 this._sceneSetup.setTimeOfDay(0.0);
             }
-            this._queue.push({ username, message, color });
+            this._queue.push({ username, message, color, emotes });
         });
 
         console.log(`[ChatSystem] Connected to #${channel}`);
@@ -47,8 +47,8 @@ export class ChatSystem {
     update(dt, playerPos) {
         // Flush queued messages now that we have a player position
         while (this._queue.length > 0 && this._byUser.size < MAX_CHARS) {
-            const { username, message, color } = this._queue.shift();
-            this._spawn(username, message, playerPos, color);
+            const { username, message, color, emotes } = this._queue.shift();
+            this._spawn(username, message, playerPos, color, emotes);
         }
         // Trim queue if overflowing
         if (this._queue.length > 20) this._queue.splice(0, this._queue.length - 20);
@@ -82,11 +82,11 @@ export class ChatSystem {
 
     // ── Internal ──────────────────────────────────────────────────────────
 
-    _spawn(username, message, playerPos, color = '') {
+    _spawn(username, message, playerPos, color = '', emotes = []) {
         // If this user already has a visible character, just update its bubble
         const existing = this._byUser.get(username);
         if (existing) {
-            existing.updateMessage(message, color);
+            existing.updateMessage(message, color, emotes);
             return;
         }
 
@@ -113,7 +113,7 @@ export class ChatSystem {
         const dir = new THREE.Vector3().subVectors(rawPos, PLANET_CENTER).normalize();
         const surfacePos = PLANET_CENTER.clone().addScaledVector(dir, PLANET_RADIUS);
 
-        const char = new ChatCharacter(this._scene, surfacePos, dir, username, message, color);
+        const char = new ChatCharacter(this._scene, surfacePos, dir, username, message, color, emotes);
         this._byUser.set(username, char);
     }
 }

@@ -4,13 +4,14 @@
 export class TwitchChat {
     /**
      * @param {string} channel  — channel name WITHOUT the #, e.g. "shroud"
-     * @param {(username: string, message: string) => void} onMessage
+     * @param {(username: string, message: string, color: string, emotes: Array<{id: string, start: number, end: number}>) => void} onMessage
      */
     constructor(channel, onMessage) {
         this._channel = channel.toLowerCase();
         this._onMessage = onMessage;
         this._ws = null;
         this._reconnectMs = 5000;
+
         this._connect();
     }
 
@@ -39,13 +40,33 @@ export class TwitchChat {
             if (!match) return;
             const message = match[1].trim();
 
-            // Extract display-name and color from IRCv3 tags
+            // Extract display-name, color, and emotes from IRCv3 tags
             const tagMatch = raw.match(/display-name=([^;]+)/);
             const username = tagMatch ? tagMatch[1] : raw.match(/:(\w+)!/)?.[1] ?? 'anon';
-            const colorMatch = raw.match(/(?:^|;)color=(#[0-9A-Fa-f]{6})/);
-            const color = colorMatch ? colorMatch[1] : '';  // '' = no color set
 
-            this._onMessage(username, message, color);
+            const colorMatch = raw.match(/(?:^|;)color=(#[0-9A-Fa-f]{6})/);
+            const color = colorMatch ? colorMatch[1] : '';
+
+            // emotes=25:0-4,12-16/1902:23-27
+            const emotesMatch = raw.match(/(?:^|;)emotes=([^;]+)/);
+            const emotes = [];
+            if (emotesMatch && emotesMatch[1]) {
+                const parts = emotesMatch[1].split('/');
+                for (const part of parts) {
+                    const [id, positions] = part.split(':');
+                    if (!id || !positions) continue;
+                    for (const pos of positions.split(',')) {
+                        const [start, end] = pos.split('-');
+                        emotes.push({
+                            id,
+                            start: parseInt(start, 10),
+                            end: parseInt(end, 10)
+                        });
+                    }
+                }
+            }
+
+            this._onMessage(username, message, color, emotes);
         };
 
         ws.onclose = () => {

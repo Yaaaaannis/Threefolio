@@ -19,79 +19,151 @@ function colorForName(name) {
     return PALETTE[h % PALETTE.length];
 }
 
-function makeBubbleSprite(username, message, nameColorHex) {
+function makeBubbleSprite(username, message, nameColorHex, emotes = [], onUpdate = null) {
     const W = 768, H = 384;
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     const ctx = c.getContext('2d');
+    const tex = new THREE.CanvasTexture(c);
 
-    // Background: white rounded rect
-    const pad = 20, r = 28, tailH = 36;
-    const boxH = H - tailH - 4;
+    // Sort emotes by start index
+    const sortedEmotes = [...emotes].sort((a, b) => a.start - b.start);
 
-    ctx.clearRect(0, 0, W, H);
+    // Segment the message into text blocks and emote blocks
+    const segments = [];
+    let lastIndex = 0;
+    for (const em of sortedEmotes) {
+        if (em.start > lastIndex) {
+            segments.push({ type: 'text', content: message.substring(lastIndex, em.start) });
+        }
 
-    // Shadow
-    ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetY = 4;
+        // Use custom URL if provided (for 3rd party emotes), otherwise build Twitch CDN URL
+        const imgUrl = em.url || `https://static-cdn.jtvnw.net/emoticons/v2/${em.id}/default/light/3.0`;
 
-    // Bubble body
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#222222';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(pad + r, pad);
-    ctx.lineTo(W - pad - r, pad);
-    ctx.arcTo(W - pad, pad, W - pad, pad + r, r);
-    ctx.lineTo(W - pad, boxH - r);
-    ctx.arcTo(W - pad, boxH, W - pad - r, boxH, r);
-    // Tail (pointing down-left toward character)
-    ctx.lineTo(W / 2 + 40, boxH);
-    ctx.lineTo(W / 2, boxH + tailH);    // tip
-    ctx.lineTo(W / 2 - 20, boxH);
-    ctx.lineTo(pad + r, boxH);
-    ctx.arcTo(pad, boxH, pad, boxH - r, r);
-    ctx.lineTo(pad, pad + r);
-    ctx.arcTo(pad, pad, pad + r, pad, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowColor = 'transparent';
-    ctx.stroke();
+        segments.push({ type: 'emote', url: imgUrl, img: null });
+        lastIndex = em.end + 1;
+    }
+    if (lastIndex < message.length) {
+        segments.push({ type: 'text', content: message.substring(lastIndex) });
+    }
 
-    // Username (colored, bold)
-    const nameColor = nameColorHex || ('#' + colorForName(username).toString(16).padStart(6, '0'));
-    ctx.font = 'bold 56px Arial';
-    ctx.fillStyle = nameColor;
-    ctx.textBaseline = 'top';
-    ctx.shadowColor = 'rgba(0,0,0,0.2)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(username, pad + 12, pad + 14);
-    ctx.shadowColor = 'transparent';
-
-    // Message (wrap to 2 lines)
-    ctx.font = '46px Arial';
-    ctx.fillStyle = '#222222';
-    const maxW = W - pad * 2 - 24;
-    const words = message.split(' ');
-    let line = '', lines = [];
-    for (const w of words) {
-        const test = line ? line + ' ' + w : w;
-        if (ctx.measureText(test).width > maxW && line) {
-            lines.push(line);
-            line = w;
-            if (lines.length >= 2) break;
-        } else {
-            line = test;
+    // Pre-load emote images
+    let pendingImages = 0;
+    for (const seg of segments) {
+        if (seg.type === 'emote') {
+            pendingImages++;
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                seg.img = img;
+                pendingImages--;
+                if (pendingImages === 0) draw();
+            };
+            img.onerror = () => {
+                pendingImages--;
+                if (pendingImages === 0) draw();
+            };
+            img.src = seg.url;
         }
     }
-    if (line && lines.length < 2) lines.push(line);
-    if (line && lines.length === 2 && !lines[1].endsWith(line)) {
-        lines[1] = lines[1].substring(0, lines[1].length - 1) + '…';
-    }
-    lines.forEach((l, i) => ctx.fillText(l, pad + 12, pad + 88 + i * 56));
 
-    return new THREE.CanvasTexture(c);
+    function draw() {
+        // Background: white rounded rect
+        const pad = 20, r = 28, tailH = 36;
+        const boxH = H - tailH - 4;
+
+        ctx.clearRect(0, 0, W, H);
+
+        // Shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.35)';
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetY = 4;
+
+        // Bubble body
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#222222';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(pad + r, pad);
+        ctx.lineTo(W - pad - r, pad);
+        ctx.arcTo(W - pad, pad, W - pad, pad + r, r);
+        ctx.lineTo(W - pad, boxH - r);
+        ctx.arcTo(W - pad, boxH, W - pad - r, boxH, r);
+        // Tail
+        ctx.lineTo(W / 2 + 40, boxH);
+        ctx.lineTo(W / 2, boxH + tailH);
+        ctx.lineTo(W / 2 - 20, boxH);
+        ctx.lineTo(pad + r, boxH);
+        ctx.arcTo(pad, boxH, pad, boxH - r, r);
+        ctx.lineTo(pad, pad + r);
+        ctx.arcTo(pad, pad, pad + r, pad, r);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+        ctx.stroke();
+
+        // Username
+        const nameColor = nameColorHex || ('#' + colorForName(username).toString(16).padStart(6, '0'));
+        ctx.font = 'bold 56px Arial';
+        ctx.fillStyle = nameColor;
+        ctx.textBaseline = 'top';
+        ctx.shadowColor = 'rgba(0,0,0,0.2)';
+        ctx.shadowBlur = 4;
+        ctx.fillText(username, pad + 12, pad + 14);
+        ctx.shadowColor = 'transparent';
+
+        // Message
+        ctx.font = '46px Arial';
+        ctx.fillStyle = '#222222';
+        const maxW = W - pad * 2 - 24;
+
+        const lineH = 56;
+        let cx = pad + 12;
+        let cy = pad + 88;
+        let lines = 0;
+
+        for (const seg of segments) {
+            if (lines >= 2) break;
+
+            if (seg.type === 'text') {
+                const words = seg.content.split(/(\s+)/);
+                for (const w of words) {
+                    if (!w) continue;
+                    const metrics = ctx.measureText(w);
+                    if (cx + metrics.width > maxW && cx > pad + 12) {
+                        lines++;
+                        if (lines >= 2) break;
+                        cx = pad + 12;
+                        cy += lineH;
+                        if (w.trim() === '') continue;
+                    }
+                    if (w.trim() !== '') {
+                        ctx.fillText(w, cx, cy);
+                    }
+                    cx += metrics.width;
+                }
+            } else if (seg.type === 'emote') {
+                const size = 52;
+                if (cx + size > maxW && cx > pad + 12) {
+                    lines++;
+                    if (lines >= 2) break;
+                    cx = pad + 12;
+                    cy += lineH;
+                }
+                if (seg.img) {
+                    ctx.drawImage(seg.img, cx, cy - 4, size, size);
+                }
+                cx += size + 8;
+            }
+        }
+
+        tex.needsUpdate = true;
+        if (onUpdate) onUpdate();
+    }
+
+    if (pendingImages === 0) draw();
+
+    return tex;
 }
 
 export class ChatCharacter {
@@ -102,12 +174,15 @@ export class ChatCharacter {
      * @param {string} username
      * @param {string} message
      * @param {string} [twitchColor]  — hex color from Twitch IRC tag, e.g. '#FF0000'
+     * @param {Array} [emotes]        — Twitch emotes array
      */
-    constructor(scene, position, normal, username, message, twitchColor = '') {
+    constructor(scene, position, normal, username, message, twitchColor = '', emotes = []) {
         this._scene = scene;
         this._alive = true;
         this._elapsed = 0;
         this._meshes = [];
+        this._username = username;
+        this._emotes = emotes;
         this._username = username;
 
         const col = twitchColor
@@ -140,9 +215,13 @@ export class ChatCharacter {
         this._meshes.push(this._head);
 
         // ── Speech bubble (Sprite – always faces camera) ──────────────────
-        const tex = makeBubbleSprite(username, message, resolvedHex);
+        let needsHackUpdate = false;
+        const tex = makeBubbleSprite(username, message, resolvedHex, emotes, () => {
+            needsHackUpdate = true; // Triggers material re-render in update()
+        });
         const sprMat = new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true });
         this._sprite = new THREE.Sprite(sprMat);
+        this._wantsTexUpdate = () => { if (needsHackUpdate) { sprMat.needsUpdate = true; needsHackUpdate = false; } };
         // Position above head; scale to world units (canvas 512×256 → 2×1 world units)
         this._sprite.position.copy(this._head.position).addScaledVector(up, 2.2);
         this._sprite.scale.set(4.5, 2.25, 1);
@@ -158,6 +237,8 @@ export class ChatCharacter {
     /** @param {number} dt */
     update(dt) {
         if (!this._alive) return false;
+
+        this._wantsTexUpdate?.(); // apply newly loaded emote textures
 
         this._elapsed += dt;
 
@@ -200,16 +281,22 @@ export class ChatCharacter {
      * Replace the speech bubble with a new message and reset the lifetime.
      * @param {string} message
      * @param {string} [twitchColor]
+     * @param {Array} [emotes]
      */
-    updateMessage(message, twitchColor = '') {
+    updateMessage(message, twitchColor = '', emotes = []) {
+        this._emotes = emotes;
         // Rebuild the bubble texture with the same color logic as constructor
         const resolvedHex = twitchColor
             ? twitchColor
             : '#' + colorForName(this._username).toString(16).padStart(6, '0');
-        const newTex = makeBubbleSprite(this._username, message, resolvedHex);
+        let needsHackUpdate = false;
+        const newTex = makeBubbleSprite(this._username, message, resolvedHex, emotes, () => {
+            needsHackUpdate = true;
+        });
         const oldTex = this._sprite.material.map;
         this._sprite.material.map = newTex;
         this._sprite.material.needsUpdate = true;
+        this._wantsTexUpdate = () => { if (needsHackUpdate) { this._sprite.material.needsUpdate = true; needsHackUpdate = false; } };
         oldTex?.dispose();
 
         // Reset lifetime and fade
