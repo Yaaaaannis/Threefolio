@@ -7,7 +7,8 @@ import { ChatCharacter } from '../entities/chatCharacter.js';
 
 const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
 const PLANET_RADIUS = 50;
-const SPAWN_RADIUS = 2.0;   // units from player in the surface tangent plane
+const SPAWN_RADIUS = 5.0;   // units from player in the surface tangent plane (increased for more spread)
+const AVOIDANCE_RADIUS = 2.0; // minimum distance between characters
 const MAX_CHARS = 30;    // max simultaneous unique users
 
 export class ChatSystem {
@@ -16,11 +17,15 @@ export class ChatSystem {
      * @param {string} channel  — Twitch channel name (no #)
      * @param {Player} player   — Player instance to modify gravity
      * @param {SceneSetup} sceneSetup — SceneSetup instance to change day/night
+     * @param {object} RAPIER   — Rapier physics engine
+     * @param {object} world    — Rapier physics world
      */
-    constructor(scene, channel, player, sceneSetup) {
+    constructor(scene, channel, player, sceneSetup, RAPIER, world) {
         this._scene = scene;
         this._player = player;
         this._sceneSetup = sceneSetup;
+        this._RAPIER = RAPIER;
+        this._world = world;
         this._byUser = new Map();  // username → ChatCharacter (dedup)
         this._queue = [];         // buffered messages while player pos unknown
 
@@ -57,6 +62,18 @@ export class ChatSystem {
         for (const [user, char] of this._byUser) {
             if (!char.update(dt)) this._byUser.delete(user);
         }
+
+        // Periodically assign new random walking targets to all characters
+        this._retargetTimer += dt;
+        if (this._retargetTimer > 2.0) { // Every 2 seconds, give them a chance to change direction
+            this._retargetTimer = 0;
+            for (const char of this._byUser.values()) {
+                if (Math.random() < 0.3) { // 30% chance to pick a new destination
+                    const newTarget = this._getRandomSurfacePos(playerPos, 5.0); // Wander within 5 units of player
+                    char.setTarget(newTarget);
+                }
+            }
+        }
     }
 
     dispose() {
@@ -82,14 +99,7 @@ export class ChatSystem {
 
     // ── Internal ──────────────────────────────────────────────────────────
 
-    _spawn(username, message, playerPos, color = '', emotes = []) {
-        // If this user already has a visible character, just update its bubble
-        const existing = this._byUser.get(username);
-        if (existing) {
-            existing.updateMessage(message, color, emotes);
-            return;
-        }
-
+    _getRandomSurfacePos(playerPos, radius) {
         // Surface normal at player position
         const normal = new THREE.Vector3()
             .subVectors(playerPos, PLANET_CENTER)
@@ -102,18 +112,86 @@ export class ChatSystem {
         const tA = new THREE.Vector3().crossVectors(normal, arbUp).normalize();
         const tB = new THREE.Vector3().crossVectors(normal, tA).normalize();
 
-        // Random point on a circle of SPAWN_RADIUS around player in the tangent plane
-        const angle = Math.random() * Math.PI * 2;
-        const r = SPAWN_RADIUS * (0.5 + 0.5 * Math.random());
-        const worldOffset = tA.clone().multiplyScalar(Math.cos(angle) * r)
-            .addScaledVector(tB, Math.sin(angle) * r);
+        const activePositions = this.activePositions;
 
-        // Project back onto sphere surface
-        const rawPos = playerPos.clone().add(worldOffset);
-        const dir = new THREE.Vector3().subVectors(rawPos, PLANET_CENTER).normalize();
-        const surfacePos = PLANET_CENTER.clone().addScaledVector(dir, PLANET_RADIUS);
+        // Try up to 10 times to find a spot that's far enough from others
+        let bestPos = null;
+        let maxDist = -1;
 
-        const char = new ChatCharacter(this._scene, surfacePos, dir, username, message, color, emotes);
+        for (let attempt = 0; attempt < 10; attempt++) {
+            // Random point on a circle in the tangent plane
+            const angle = Math.random() * Math.PI * 2;
+            const r = radius * (0.3 + 0.7 * Math.random()); // spawn further out
+            const worldOffset = tA.clone().multiplyScalar(Math.cos(angle) * r)
+                .addScaledVector(tB, Math.sin(angle) * r);
+
+            // Project back onto sphere surface
+            const rawPos = playerPos.clone().add(worldOffset);
+            const dir = new THREE.Vector3().subVectors(rawPos, PLANET_CENTER).normalize();
+            const candidatePos = PLANET_CENTER.clone().addScaledVector(dir, PLANET_RADIUS);
+
+            // Check distance to other characters
+            let minDistToOther = Infinity;
+            for (const otherPos of activePositions) {
+                const dist = candidatePos.distanceTo(otherPos);
+                if (dist < minDistToOther) minDistToOther = dist;
+            }
+
+            if (minDistToOther >= AVOIDANCE_RADIUS) {
+                return candidatePos; // Found a good spot
+            }
+
+            // Keep track of the best attempt in case we fail 10 times
+            if (minDistToOther > maxDist) {
+                maxDist = minDistToOther;
+                bestPos = candidatePos;
+            }
+        }
+
+        // Fallback to the best found position if it's too crowded
+        return bestPos || playerPos;
+    }
+
+    _spawn(username, message, playerPos, color = '', emotes = []) {
+        // If this user already has a visible character, just update its bubble
+        const existing = this._byUser.get(username);
+        if (existing) {
+            existing.updateMessage(message, color, emotes);
+            // Optionally bring them closer to player when they speak again, but try not to overlap
+            existing.setTarget(this._getRandomSurfacePos(playerPos, SPAWN_RADIUS));
+            return;
+        }
+
+        const surfacePos = this._getRandomSurfacePos(playerPos, SPAWN_RADIUS);
+        const dir = new THREE.Vector3().subVectors(surfacePos, PLANET_CENTER).normalize();
+
+        // Add a little height so they drop in
+        surfacePos.addScaledVector(dir, 5.0);
+
+        const char = new ChatCharacter(
+            this._scene,
+            surfacePos,
+            dir,
+            username,
+            message,
+            color,
+            emotes,
+            this._RAPIER,
+            this._world
+        );
         this._byUser.set(username, char);
+    }
+
+    /**
+     * @returns {Array<{x: number, y: number, z: number}>} Array of active character positions
+     */
+    get activePositions() {
+        const positions = [];
+        for (const char of this._byUser.values()) {
+            if (char._alive && char._body) {
+                positions.push(char._body.position.clone());
+            }
+        }
+        return positions;
     }
 }

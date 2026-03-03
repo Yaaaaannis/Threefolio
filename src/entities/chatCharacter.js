@@ -3,10 +3,12 @@
 
 import * as THREE from 'three';
 
-const LIFETIME_S = 15;
+const LIFETIME_S = 30;
 const HEAD_RADIUS = 0.45;
 const BODY_HEIGHT = 1.1;
 const BODY_RADIUS = 0.32;
+const PLANET_RADIUS = 50;
+const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
 
 // Vivid colors for different usernames (hash-based)
 const PALETTE = [
@@ -183,6 +185,15 @@ export class ChatCharacter {
         this._meshes = [];
         this._username = username;
         this._emotes = emotes;
+
+        // Wandering state
+        this._moveSpeed = 1.5 + Math.random() * 1.5; // units per second
+        this._targetPos = position.clone();
+        this._hopVelocity = 0;
+        this._hopGravity = -15;
+        this._yOffset = 0; // vertical offset from surface
+        this._nextHopTime = Math.random() * 2 + 1; // 1 to 3 seconds until first hop
+
         this._username = username;
 
         const col = twitchColor
@@ -196,8 +207,8 @@ export class ChatCharacter {
         const bodyGeo = new THREE.CylinderGeometry(BODY_RADIUS, BODY_RADIUS, BODY_HEIGHT, 8);
         const bodyMat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.8 });
         this._body = new THREE.Mesh(bodyGeo, bodyMat);
-        // Sit the cylinder on the surface
-        this._body.position.copy(position).addScaledVector(up, BODY_HEIGHT / 2 + 0.02);
+        const startPos = position.clone().addScaledVector(up, BODY_HEIGHT / 2 + 0.02);
+        this._body.position.copy(startPos);
         // Align Y axis to surface normal
         this._body.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
         this._body.castShadow = true;
@@ -242,7 +253,66 @@ export class ChatCharacter {
 
         this._elapsed += dt;
 
-        // Spawn spring animation (first 0.4s)
+        // --- Logic: Wandering ---
+        // Basic physics/hopping
+        this._nextHopTime -= dt;
+        if (this._nextHopTime <= 0 && this._yOffset === 0) {
+            this._hopVelocity = 2.5 + Math.random() * 2; // jump
+            this._nextHopTime = Math.random() * 3 + 1.5; // Wait 1.5s - 4.5s for next hop
+        }
+
+        if (this._yOffset > 0 || this._hopVelocity > 0) {
+            this._yOffset += this._hopVelocity * dt;
+            this._hopVelocity += this._hopGravity * dt;
+            if (this._yOffset < 0) { // hit ground
+                this._yOffset = 0;
+                this._hopVelocity = 0;
+            }
+        }
+
+        // --- Logic: Moving towards target ---
+        // Get current surface direction (ignoring hop)
+        const currentUp = new THREE.Vector3().subVectors(this._body.position, PLANET_CENTER).normalize();
+        const currentSurfacePos = PLANET_CENTER.clone().addScaledVector(currentUp, PLANET_RADIUS);
+
+        // Distance to target on sphere surface (approximate by linear distance since it walks short distances)
+        let dist = currentSurfacePos.distanceTo(this._targetPos);
+
+        if (dist > 0.1) {
+            // Move gently towards target
+            const step = Math.min(this._moveSpeed * dt, dist);
+            // Slerp along the sphere
+            const startQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), currentUp);
+            const targetUp = new THREE.Vector3().subVectors(this._targetPos, PLANET_CENTER).normalize();
+            const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), targetUp);
+
+            const stepFraction = step / dist;
+            const newQuat = startQuat.slerp(targetQuat, stepFraction);
+
+            // Apply new position from interpolated rotation
+            const newUp = new THREE.Vector3(0, 1, 0).applyQuaternion(newQuat);
+            const newSurface = PLANET_CENTER.clone().addScaledVector(newUp, PLANET_RADIUS);
+
+            const targetPos = newSurface.clone().addScaledVector(newUp, BODY_HEIGHT / 2 + 0.02 + this._yOffset);
+
+            // Re-apply objects
+            this._body.position.copy(targetPos);
+            this._body.quaternion.copy(newQuat);
+
+            this._head.position.copy(newSurface).addScaledVector(newUp, BODY_HEIGHT / 2 + HEAD_RADIUS + this._yOffset);
+
+            // Make sprite face camera and stay above head
+            this._sprite.position.copy(newSurface).addScaledVector(newUp, 2.2 + this._yOffset);
+        } else {
+            // Apply just the hop offset if we are stationary
+            const targetPos = currentSurfacePos.clone().addScaledVector(currentUp, BODY_HEIGHT / 2 + 0.02 + this._yOffset);
+
+            this._body.position.copy(targetPos);
+            this._head.position.copy(currentSurfacePos).addScaledVector(currentUp, BODY_HEIGHT / 2 + HEAD_RADIUS + this._yOffset);
+            this._sprite.position.copy(currentSurfacePos).addScaledVector(currentUp, 2.2 + this._yOffset);
+        }
+
+        // Spawn spring animation (first 0.4s) - scale overwrites the normal state
         if (this._spawnPhase) {
             const t = Math.min(this._elapsed / 0.4, 1);
             const s = t < 1 ? 1 + 0.3 * Math.sin(t * Math.PI) * (1 - t) : 1;
@@ -275,6 +345,14 @@ export class ChatCharacter {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Give the character a new target position to walk towards.
+     * @param {THREE.Vector3} targetPos 
+     */
+    setTarget(targetPos) {
+        this._targetPos.copy(targetPos);
     }
 
     /**

@@ -282,18 +282,20 @@ export class Grass {
         // This avoids flooding the buffer with stationary entries
         const MOVE_THRESHOLD_SQ = 0.09; // 0.3 units squared
         if (cubePositions) {
-            if (!this._cubeLastPos) {
+            if (!this._cubeLastPos || this._cubeLastPos.length !== cubePositions.length) {
                 this._cubeLastPos = cubePositions.map(c => ({ x: c.x, z: c.z }));
             }
             for (let i = 0; i < cubePositions.length; i++) {
                 const cube = cubePositions[i];
-                const last = this._cubeLastPos[i];
+                const last = this._cubeLastPos[i] || { x: cube.x, z: cube.z }; // handle new dynamic additions safely
                 const dx = cube.x - last.x;
                 const dz = cube.z - last.z;
                 if (dx * dx + dz * dz > MOVE_THRESHOLD_SQ) {
                     // Record the OLD position as a footprint (where it was)
                     this._cubeTrail.push({ x: last.x, z: last.z, t: time });
                     this._cubeLastPos[i] = { x: cube.x, z: cube.z };
+                } else {
+                    this._cubeLastPos[i] = last;
                 }
             }
             this._cubeTrail = this._cubeTrail.filter(e => (time - e.t) < totalTime + 0.2);

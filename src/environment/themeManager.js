@@ -96,7 +96,7 @@ export class ThemeManager {
     }
 
     /** Call every frame from the game loop. */
-    update(dt, playerPos, time) {
+    update(dt, playerPos, time, chatPositions = []) {
         // Lerp planet surface colors
         this._planet.update(dt);
 
@@ -120,7 +120,7 @@ export class ThemeManager {
         }
 
         // Update active theme
-        this._current?.update(dt, playerPos, time);
+        this._current?.update(dt, playerPos, time, chatPositions);
     }
 
     // ── Internal ──────────────────────────────────────────────────────────

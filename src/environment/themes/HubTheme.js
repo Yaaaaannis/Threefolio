@@ -86,16 +86,22 @@ export class HubTheme extends BaseTheme {
         this._portals.push(portal);
     }
 
-    update(dt, playerPos, time) {
+    update(dt, playerPos, time, chatPositions = []) {
         const TIMESTEP = 1 / 60;
         this._chess?.update(TIMESTEP);
         this._cubeWall?.update(TIMESTEP);
         this._football?.update(TIMESTEP);
         if (playerPos) {
-            const cubePositions = this._cubeWall?.cubes?.map(c => {
+            let cubePositions = this._cubeWall?.cubes?.map(c => {
                 const t = c.rigidBody.translation();
                 return { x: t.x, z: t.z };
             }) ?? [];
+
+            // Add chat characters so they also displace the grass
+            if (chatPositions.length > 0) {
+                cubePositions = cubePositions.concat(chatPositions.map(p => ({ x: p.x, z: p.z })));
+            }
+
             this._grass?.update(time, playerPos, true, cubePositions);
             this._chessZone?.update(playerPos);
             this._spawnerZone?.update(playerPos);

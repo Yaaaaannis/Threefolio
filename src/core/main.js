@@ -77,9 +77,7 @@ async function init() {
     // Load Hub as first theme
     await worldManager.init(HubTheme, onPortal);
 
-    // Provide player with ability to emit particles using global time
-    player.particleSystem = particleSys;
-    player.timeGetter = () => clock.elapsedTime;
+    // Timer setup moved lower where it's actually instantiated
 
     // UI refs
     const crossfade = document.getElementById('crossfade');
@@ -124,6 +122,11 @@ async function init() {
     // Timer (replaces deprecated Clock)
     const timer = new THREE.Timer();
     timer.connect(document); // Handle tab switching politely
+
+    // Provide player with ability to emit particles using global time
+    player.particleSystem = particleSys;
+    player.timeGetter = () => timer.getElapsed();
+
     let ending = false;
     let physicsAccumulator = 0;
 
@@ -158,14 +161,15 @@ async function init() {
         // Echo system
         echoSys.tick(state.elapsedTime, dt);
 
-        // Room / world update (active world)
-        const planetCenter = worldManager.planetCenter;
-        worldManager.update(dt, playerPos, now);
-
-        // Zone update (hub-specific zones now in worldManager.update above)
-
         // Twitch chat characters
-        if (chatSys) chatSys.update(dt, playerPos);
+        let chatPositions = [];
+        if (chatSys) {
+            chatSys.update(dt, playerPos);
+            chatPositions = chatSys.activePositions;
+        }
+
+        // Room / world update (active world)
+        worldManager.update(dt, playerPos, now, chatPositions);
 
         // Particles update
         particleSys.update(now);
