@@ -108,6 +108,7 @@ export class ChatCharacter {
         this._alive = true;
         this._elapsed = 0;
         this._meshes = [];
+        this._username = username;
 
         const col = twitchColor
             ? parseInt(twitchColor.replace('#', ''), 16)  // use real Twitch color
@@ -193,6 +194,32 @@ export class ChatCharacter {
             return false;
         }
         return true;
+    }
+
+    /**
+     * Replace the speech bubble with a new message and reset the lifetime.
+     * @param {string} message
+     * @param {string} [twitchColor]
+     */
+    updateMessage(message, twitchColor = '') {
+        // Rebuild the bubble texture with the same color logic as constructor
+        const resolvedHex = twitchColor
+            ? twitchColor
+            : '#' + colorForName(this._username).toString(16).padStart(6, '0');
+        const newTex = makeBubbleSprite(this._username, message, resolvedHex);
+        const oldTex = this._sprite.material.map;
+        this._sprite.material.map = newTex;
+        this._sprite.material.needsUpdate = true;
+        oldTex?.dispose();
+
+        // Reset lifetime and fade
+        this._elapsed = 0;
+        this._alive = true;
+        this._body.material.opacity = 1;
+        this._body.material.transparent = false;
+        this._head.material.opacity = 1;
+        this._head.material.transparent = false;
+        this._sprite.material.opacity = 1;
     }
 
     dispose() {

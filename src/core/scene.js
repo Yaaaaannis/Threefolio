@@ -59,6 +59,10 @@ export class SceneSetup {
 
         // Camera Modes
         this.cameraMode = 'player'; // 'player' or 'topdown'
+
+        // Day/Night Cycle
+        this.timeOfDay = 1.0; // 1 = Day, 0 = Night
+        this.targetTimeOfDay = 1.0;
     }
 
     _setupLights() {
@@ -81,14 +85,39 @@ export class SceneSetup {
         this.scene.add(this.dirLight);
 
         // Soft fill from below-opposite
-        const fillLight = new THREE.DirectionalLight(0xd0e8ff, 0.4);
-        fillLight.position.set(-5, 3, -8);
-        this.scene.add(fillLight);
+        this.fillLight = new THREE.DirectionalLight(0xd0e8ff, 0.4);
+        this.fillLight.position.set(-5, 3, -8);
+        this.scene.add(this.fillLight);
 
         // Point light above player (moves with player)
         this.playerLight = new THREE.PointLight(0xffedcc, 1.2, 12);
         this.playerLight.position.set(0, 4, 0);
         this.scene.add(this.playerLight);
+
+        // Day vs Night configuration
+        this.dayColors = {
+            ambient: new THREE.Color(0xfff8f0),
+            dir: new THREE.Color(0xfffbe6),
+            fill: new THREE.Color(0xd0e8ff),
+            ambientInt: 0.7,
+            dirInt: 1.5,
+            fillInt: 0.4,
+            exposure: 1.1
+        };
+        this.nightColors = {
+            ambient: new THREE.Color(0x202b3a), // deep moonlight ambient
+            dir: new THREE.Color(0x5a7abf), // pale blue moon
+            fill: new THREE.Color(0x0a101d), // very dark shadows
+            ambientInt: 0.15,
+            dirInt: 0.4,
+            fillInt: 0.05,
+            exposure: 0.3                     // dim HDR background
+        };
+    }
+
+    /** Set target time (1.0 = day, 0.0 = night) */
+    setTimeOfDay(timeVal) {
+        this.targetTimeOfDay = Math.max(0, Math.min(1, timeVal));
     }
 
     /**
@@ -138,6 +167,21 @@ export class SceneSetup {
 
         // Light follows target
         this.playerLight.position.set(targetPos.x, targetPos.y + 3.5, targetPos.z);
+
+        // Lerp Day/Night
+        if (Math.abs(this.targetTimeOfDay - this.timeOfDay) > 0.001) {
+            this.timeOfDay += (this.targetTimeOfDay - this.timeOfDay) * Math.min(1, dt * 1.5);
+
+            this.ambientLight.color.lerpColors(this.nightColors.ambient, this.dayColors.ambient, this.timeOfDay);
+            this.dirLight.color.lerpColors(this.nightColors.dir, this.dayColors.dir, this.timeOfDay);
+            this.fillLight.color.lerpColors(this.nightColors.fill, this.dayColors.fill, this.timeOfDay);
+
+            this.ambientLight.intensity = THREE.MathUtils.lerp(this.nightColors.ambientInt, this.dayColors.ambientInt, this.timeOfDay);
+            this.dirLight.intensity = THREE.MathUtils.lerp(this.nightColors.dirInt, this.dayColors.dirInt, this.timeOfDay);
+            this.fillLight.intensity = THREE.MathUtils.lerp(this.nightColors.fillInt, this.dayColors.fillInt, this.timeOfDay);
+
+            this.renderer.toneMappingExposure = THREE.MathUtils.lerp(this.nightColors.exposure, this.dayColors.exposure, this.timeOfDay);
+        }
     }
 
     _onResize() {

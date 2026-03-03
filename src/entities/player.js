@@ -23,7 +23,8 @@ export class Player {
     constructor(scene, RAPIER, world) {
         this.RAPIER = RAPIER;
         this.world = world;
-
+        this.scene = scene;
+        this.gravityMultiplier = 1.0;
         this.mesh = new THREE.Group();
         scene.add(this.mesh);
 
@@ -118,8 +119,8 @@ export class Player {
         const pos3 = new THREE.Vector3(pos.x, pos.y, pos.z);
         const upNormal = new THREE.Vector3().subVectors(pos3, planetCenter).normalize();
 
-        // Apply spherical gravity (-20 units/s^2)
-        const gravityForce = upNormal.clone().multiplyScalar(-20 * dt);
+        // Apply spherical gravity (-20 units/s^2), scaled by multiplier
+        const gravityForce = upNormal.clone().multiplyScalar(-20 * this.gravityMultiplier * dt);
         this.rigidBody.applyImpulse({ x: gravityForce.x, y: gravityForce.y, z: gravityForce.z }, true);
 
         // Robust grounded check using short raycast towards planet center
