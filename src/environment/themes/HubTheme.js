@@ -1,10 +1,8 @@
-// HubWorld.js — The main Hub/Spawn planet (the current room content).
-// Splatmap-textured sphere + grass + chess + football + cubewall + portals to 3 worlds.
+// HubTheme.js — Hub/Spawn surface decorations.
+// All the entities from HubWorld minus the planet sphere/collider (PlanetCore owns those).
 
 import * as THREE from 'three';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
-import { color, mix, texture, vec2, positionWorld, float, smoothstep, normalize, dot, max, floor, vec3, clamp } from 'three/tsl';
-import { BaseWorld } from './BaseWorld.js';
+import { BaseTheme } from './BaseTheme.js';
 import { Grass } from '../grass.js';
 import { Chess } from '../../entities/chess.js';
 import { CubeWall } from '../cubeWall.js';
@@ -16,10 +14,15 @@ import { FollowerSphere } from '../../entities/followerSphere.js';
 import { Antenna } from '../../entities/antenna.js';
 import { SocialZone } from '../socialZone.js';
 
-export class HubWorld extends BaseWorld {
+const PC = new THREE.Vector3(0, -50, 0);
+const PR = 50;
+
+export class HubTheme extends BaseTheme {
+    static get themeKey() { return 'hub'; }
+
     constructor(onPortal) {
         super();
-        this._onPortal = onPortal; // (worldKey) => opens GalaxyMenu
+        this._onPortal = onPortal;
         this._portals = [];
         this._grass = null;
         this._chess = null;
@@ -32,67 +35,10 @@ export class HubWorld extends BaseWorld {
         this._socialZone = null;
     }
 
-    get planetCenter() { return new THREE.Vector3(0, -50, 0); }
-    get planetRadius() { return 50; }
     get spawnPoint() { return new THREE.Vector3(0, 1.5, 0); }
 
     load(scene, RAPIER, rapierWorld) {
         super.load(scene, RAPIER, rapierWorld);
-
-        const PC = this.planetCenter;
-        const PR = this.planetRadius;
-
-        // ── Cartoon / cel-shading floor material ──────────────────────────
-        // Splatmap still drives grass/dirt blending
-        const splatmapTexture = new THREE.TextureLoader().load('/textures/newmap.png');
-        const grassSize = 60.0;
-        const uvX = positionWorld.x.div(grassSize).add(0.5);
-        const uvY = float(0.5).sub(positionWorld.z.div(grassSize));
-        const splatUV = vec2(uvX, uvY);
-        const splatColor = texture(splatmapTexture, splatUV);
-        const dirtBlend = smoothstep(0.0, 1.0, splatColor.g);
-
-        // 1. Bright saturated cartoon grass & dirt base colors
-        const grassColor = color(0x5ecf3e);   // vivid cartoon green
-        const dirtColor = color(0xc07a35);   // warm cartoon dirt
-        const surfaceColor = mix(grassColor, dirtColor, dirtBlend);
-
-        // 2. Quantize diffuse into 3 steps:  shadow / mid / lit
-        //    Sun direction (matches scene directional light roughly)
-        const sunDir = normalize(vec3(0.4, 1.0, 0.5));
-        // Sphere normal at each fragment = normalize(positionWorld - planetCenter)
-        const toSurface = normalize(positionWorld.sub(vec3(PC.x, PC.y, PC.z)));
-        const NdotL = clamp(dot(toSurface, sunDir), 0.0, 1.0);
-        // 3 hard bands: 0-0.3 = shadow, 0.3-0.65 = mid, 0.65-1 = lit
-        const band = float(0);
-        const toon = clamp(
-            smoothstep(0.0, 0.05, NdotL).mul(0.45)          // shadow → mid edge
-                .add(smoothstep(0.3, 0.35, NdotL).mul(0.35))    // mid → lit edge
-                .add(smoothstep(0.65, 0.70, NdotL).mul(0.20)),  // lit → bright edge
-            0.0, 1.0
-        );
-
-        // 3. Dark shadow color + lit surface color blended by toon factor
-        const shadowColor = surfaceColor.mul(float(0.28));
-        const rimColor = surfaceColor.mul(float(1.15));   // slight rim boost
-        const finalColor = mix(shadowColor, rimColor, toon);
-
-        const floorMat = new MeshStandardNodeMaterial({
-            colorNode: finalColor,
-            roughness: 1.0,
-            metalness: 0.0,
-            envMapIntensity: 0.0,   // disable env reflections for flat cartoon look
-        });
-        const floorMesh = new THREE.Mesh(new THREE.SphereGeometry(PR, 128, 128), floorMat);
-        floorMesh.position.copy(PC);
-        floorMesh.receiveShadow = true;
-        this._track(floorMesh);
-
-        // Rapier planet collider
-        const floorBody = this._trackBody(rapierWorld.createRigidBody(
-            RAPIER.RigidBodyDesc.fixed().setTranslation(PC.x, PC.y, PC.z)
-        ));
-        rapierWorld.createCollider(RAPIER.ColliderDesc.ball(PR), floorBody);
 
         // ── Wall-jump corridor ────────────────────────────────────────────
         this._addCorridor(scene, RAPIER, rapierWorld);
@@ -114,28 +60,23 @@ export class HubWorld extends BaseWorld {
         this._spawnerZone = new SpawnerZone(scene, RAPIER, rapierWorld);
         this._follower = new FollowerSphere(scene, new THREE.Vector3(-8, 5, -8));
 
-        // ── Antenna ── placed at hub spawn (top of sphere, surface normal = Y up) ─
+        // ── Antenna ─ placed next to the football goal (surface-aligned) ──
         const antennaPos = new THREE.Vector3(-14, -2.9, -10);
-        // Surface normal = direction from planet center to antenna position
-        const antennaSurfaceNormal = new THREE.Vector3()
-            .subVectors(antennaPos, new THREE.Vector3(0, -50, 0))
-            .normalize();
+        const antennaSurfaceNormal = new THREE.Vector3().subVectors(antennaPos, PC).normalize();
         const uprightQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), antennaSurfaceNormal);
-        const spinQuat = new THREE.Quaternion().setFromAxisAngle(antennaSurfaceNormal, Math.PI / 6); // 30° around surface normal
+        const spinQuat = new THREE.Quaternion().setFromAxisAngle(antennaSurfaceNormal, Math.PI / 6); // 30°
         const antennaQuat = spinQuat.multiply(uprightQuat);
         this._antenna = new Antenna(scene, antennaPos, 2.5, Math.PI * 0.8, antennaQuat, RAPIER, rapierWorld);
 
-        // ── Social Media Zone ── in front of the antenna ──────────────────
-        // Offset from antenna position along a tangent so it sits ~3 units in front
+        // ── Social Media Zone ─ in front of the antenna ───────────────────
         const antennaWorldPos = new THREE.Vector3(-12, -1.7, -2);
         const socialNormal = new THREE.Vector3().subVectors(antennaWorldPos, PC).normalize();
-        // "Forward" tangent relative to the antenna position (along -Z world projected on surface)
         const tangent = new THREE.Vector3(0, 0, -1);
         tangent.sub(socialNormal.clone().multiplyScalar(tangent.dot(socialNormal))).normalize();
         const socialPos = antennaWorldPos.clone().addScaledVector(tangent, 3.5).addScaledVector(socialNormal, 0.05);
         this._socialZone = new SocialZone(scene, socialPos);
 
-        // Single portal near spawn — opens Galaxy Menu
+        // ── Portal (opens Galaxy/Theme Menu) ─────────────────────────────
         const portalDir = new THREE.Vector3(0, 50, 4).normalize();
         const portalPt = PC.clone().addScaledVector(portalDir, PR + 0.05);
         const portal = new PortalZone(
@@ -168,7 +109,7 @@ export class HubWorld extends BaseWorld {
     dispose() {
         this._portals.forEach(p => p.dispose());
         this._portals = [];
-        // Grass: not BaseWorld-tracked, remove manually
+        // Grass
         if (this._grass?.mesh) {
             this.scene.remove(this._grass.mesh);
             this._grass.mesh.geometry?.dispose();
@@ -186,18 +127,14 @@ export class HubWorld extends BaseWorld {
             this._chessZone.ringMesh.geometry?.dispose();
             this._chessZone.ringMesh.material?.dispose();
         }
-        // Chess and Football: call their own dispose()
         this._chess?.dispose();
         this._football?.dispose();
-        this._cubeWall?.dispose(); // removes every cube mesh + Rapier body
-        // Follower sphere
+        this._cubeWall?.dispose();
         if (this._follower?.mesh) {
             this.scene.remove(this._follower.mesh);
             this._follower.mesh.traverse(c => { c.geometry?.dispose(); c.material?.dispose(); });
         }
-        // Antenna
         this._antenna?.dispose();
-        // Social Zone
         this._socialZone?.dispose();
         super.dispose();
     }
@@ -205,7 +142,6 @@ export class HubWorld extends BaseWorld {
     _addCorridor(scene, RAPIER, world) {
         const wallMat = new THREE.MeshStandardMaterial({ color: 0x778899, roughness: 0.8 });
         const wH = 14, wT = 1, wL = 5, gap = 3, bX = 10, bZ = -5;
-
         const mk = (x, y, z) => {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(wT, wH, wL), wallMat);
             mesh.position.set(x, y, z);

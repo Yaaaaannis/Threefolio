@@ -12,11 +12,11 @@ import Stats from 'three/addons/libs/stats.module.js';
 import { initMobileControls } from '../ui/mobileControls.js';
 
 // World system
-import { WorldManager } from '../environment/worldManager.js';
-import { HubWorld } from '../environment/worlds/HubWorld.js';
-import { DesertWorld } from '../environment/worlds/DesertWorld.js';
-import { IceWorld } from '../environment/worlds/IceWorld.js';
-import { LavaWorld } from '../environment/worlds/LavaWorld.js';
+import { ThemeManager } from '../environment/themeManager.js';
+import { HubTheme } from '../environment/themes/HubTheme.js';
+import { DesertTheme } from '../environment/themes/DesertTheme.js';
+import { IceTheme } from '../environment/themes/IceTheme.js';
+import { LavaTheme } from '../environment/themes/LavaTheme.js';
 import { GalaxyMenu } from '../ui/galaxyMenu.js';
 
 const CLIMB_THRESHOLD = 5; // units height to trigger ending
@@ -50,15 +50,15 @@ async function init() {
     // Galaxy Menu — single portal opens this Mario-Galaxy-style selector
     const galaxyMenu = new GalaxyMenu((key) => travelTo(key));
 
-    // World Manager — handles load/unload of one planet at a time
-    const worldManager = new WorldManager(scene, RAPIER, world, player);
+    // Theme Manager — handles load/unload of one theme at a time on the permanent planet
+    const worldManager = new ThemeManager(scene, RAPIER, world, player);
 
     // Travel callback — triggers world switch with crossfade
     const WORLD_MAP = {
-        hub: (onPortal) => worldManager.switchTo(HubWorld, onPortal),
-        desert: (onPortal) => worldManager.switchTo(DesertWorld, onPortal),
-        ice: (onPortal) => worldManager.switchTo(IceWorld, onPortal),
-        lava: (onPortal) => worldManager.switchTo(LavaWorld, onPortal),
+        hub: (onPortal) => worldManager.switchTheme(HubTheme, onPortal),
+        desert: (onPortal) => worldManager.switchTheme(DesertTheme, onPortal),
+        ice: (onPortal) => worldManager.switchTheme(IceTheme, onPortal),
+        lava: (onPortal) => worldManager.switchTheme(LavaTheme, onPortal),
     };
     function travelTo(key) {
         const fn = WORLD_MAP[key];
@@ -68,8 +68,8 @@ async function init() {
         galaxyMenu.open(currentKey);
     }
 
-    // Load Hub as first world
-    await worldManager.init(HubWorld, onPortal);
+    // Load Hub as first theme
+    await worldManager.init(HubTheme, onPortal);
 
     // Provide player with ability to emit particles using global time
     player.particleSystem = particleSys;

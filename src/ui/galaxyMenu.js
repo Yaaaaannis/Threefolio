@@ -207,7 +207,7 @@ export class GalaxyMenu {
         // Title
         const title = document.createElement('div');
         title.className = 'gm-title';
-        title.textContent = '✦ Choose Your World ✦';
+        title.textContent = '✦ Choose Your Theme ✦';
         this._el.appendChild(title);
 
         // Destination planets
