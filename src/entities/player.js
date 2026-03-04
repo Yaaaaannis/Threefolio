@@ -83,7 +83,7 @@ export class Player {
         const colDesc = RAPIER.ColliderDesc.ball(0.4).setRestitution(0);
         world.createCollider(colDesc, this.rigidBody);
 
-        this.currentHeading = 0;
+        this._currentForward = new THREE.Vector3(0, 0, 1);
 
         this.prevPosition = new THREE.Vector3();
         this.speed = 0;
@@ -217,16 +217,15 @@ export class Player {
             this._punchCooldown = 0.5; // Half second cooldown
             this._punchAnimation = 0.15; // Animation duration
 
-            // Calculate a point just in front of the player (where the fist is)
-            const facingAngle = this.mesh.rotation.y;
-            const forwardDir = new THREE.Vector3(Math.sin(facingAngle), 0, Math.cos(facingAngle));
+            // Calculate a point just in front of the player (using true forward vector)
+            const forwardDir = this._currentForward ? this._currentForward.clone() : new THREE.Vector3(0, 0, 1);
 
             const punchOrigin = new THREE.Vector3().copy(pos).add(forwardDir.clone().multiplyScalar(0.6));
-            punchOrigin.y += 0.5; // Roughly chest height
+            punchOrigin.add(upNormal.clone().multiplyScalar(0.5)); // Roughly chest height relative to planet
 
             // Check for hits using a short shape cast (sphere)
             const shapeRot = { x: 0, y: 0, z: 0, w: 1 };
-            const shapeVel = { x: forwardDir.x, y: 0, z: forwardDir.z };
+            const shapeVel = { x: forwardDir.x, y: forwardDir.y, z: forwardDir.z };
             const shape = new this.RAPIER.Ball(0.4); // 0.4 radius hit area
 
             // Filter: only hit dynamic bodies (the cubes)
@@ -253,7 +252,7 @@ export class Player {
                     const impulseAmount = 20.0;
                     const impulse = {
                         x: forwardDir.x * impulseAmount,
-                        y: 0, // High Pop up
+                        y: upNormal.y * impulseAmount * 0.5 + forwardDir.y * impulseAmount, // Pop up away from planet core
                         z: forwardDir.z * impulseAmount
                     };
 
@@ -273,57 +272,7 @@ export class Player {
             }
         }
 
-        // Handle Punch (KeyF)
-        if (!this.isFrozen && KEYS.KeyF && this._punchCooldown <= 0) {
-            this._punchCooldown = 0.5; // Half second cooldown
 
-            // Calculate a point just in front of the player
-            const facingAngle = this.mesh.rotation.y;
-            const forwardDir = new THREE.Vector3(Math.sin(facingAngle), 0, Math.cos(facingAngle));
-
-            const punchOrigin = new THREE.Vector3().copy(pos).add(forwardDir.clone().multiplyScalar(0.6));
-            punchOrigin.y += 0.5; // Roughly chest height
-
-            // Check for hits using a short shape cast (sphere)
-            const shapeRot = { x: 0, y: 0, z: 0, w: 1 };
-            const shapeVel = { x: forwardDir.x, y: 0, z: forwardDir.z };
-            const shape = new this.RAPIER.Ball(0.4); // 0.4 radius hit area
-
-            const hit = this.world.castShape(
-                punchOrigin, shapeRot, shapeVel, shape,
-                0.5, // Target distance
-                0.1, // Max Toi (very short cast)
-                true, // Stop at penetration
-                undefined, undefined, undefined,
-                this.rigidBody // Exclude the player's own rigid body!
-            );
-
-            if (hit !== null) {
-                const hitCollider = this.world.getCollider(hit.colliderHandle);
-                const hitBody = hitCollider.parent();
-
-                if (hitBody && hitBody.isDynamic()) {
-                    const hitPos = hitBody.translation();
-                    const impulseAmount = 20.0;
-                    const impulse = {
-                        x: forwardDir.x * impulseAmount,
-                        y: 0,
-                        z: forwardDir.z * impulseAmount
-                    };
-
-                    hitBody.applyImpulse(impulse, true);
-
-                    if (this.particleSystem && this.timeGetter) {
-                        this.particleSystem.emit(
-                            new THREE.Vector3(hitPos.x, hitPos.y, hitPos.z),
-                            null,
-                            150,
-                            this.timeGetter()
-                        );
-                    }
-                }
-            }
-        }
 
         // Update punch cooldown (no mesh animation needed)
         if (this._punchCooldown > 0) {
@@ -371,38 +320,37 @@ export class Player {
         const newPos = this.rigidBody.translation();
         this.mesh.position.set(newPos.x, newPos.y, newPos.z);
 
-        // Rotate mesh to align with planet normal (reuse upNormal from top of update)
-        // Base quaternion to stand upright relative to the surface
-        const uprightQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), upNormal);
-
-        // Calculate heading: face the direction of movement
-        if (len > 0) {
-            // Use camRightTangent and camForwardTangent as the reference frame for heading
-            const camForwardWorld2 = new THREE.Vector3();
-            camera.getWorldDirection(camForwardWorld2);
-            const camFwd = camForwardWorld2.clone()
-                .sub(upNormal.clone().multiplyScalar(camForwardWorld2.dot(upNormal)))
-                .normalize();
-            if (camFwd.lengthSq() < 0.001) camFwd.set(1, 0, 0);
-            const camRight2 = new THREE.Vector3().crossVectors(camFwd, upNormal).normalize();
-
-            // Angle of moveDir relative to camera forward, around local up axis
-            const moveAngle = Math.atan2(moveDir.dot(camRight2), moveDir.dot(camFwd));
-
-            // Smooth heading interpolation with wrapping
-            let diff = moveAngle - this.currentHeading;
-            while (diff < -Math.PI) diff += Math.PI * 2;
-            while (diff > Math.PI) diff -= Math.PI * 2;
-            this.currentHeading += diff * 0.15;
-            while (this.currentHeading < -Math.PI) this.currentHeading += Math.PI * 2;
-            while (this.currentHeading > Math.PI) this.currentHeading -= Math.PI * 2;
+        // --- Calculate smooth rotation ---
+        // 1. Maintain _currentForward on the tangent plane
+        if (!this._currentForward) this._currentForward = new THREE.Vector3(0, 0, 1);
+        this._currentForward.projectOnPlane(upNormal).normalize();
+        if (this._currentForward.lengthSq() < 0.001) {
+            // fallback if it was perfectly aligned with upNormal
+            this._currentForward.set(upNormal.y, -upNormal.x, 0).normalize();
+            if (this._currentForward.lengthSq() < 0.001) {
+                this._currentForward.set(0, upNormal.z, -upNormal.y).normalize();
+            }
         }
 
-        // Apply heading rotation around local Y axis
-        const headingQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.currentHeading);
+        // 2. Smoothly rotate towards movement direction
+        if (len > 0) {
+            const angleDiff = this._currentForward.angleTo(moveDir);
+            if (angleDiff > 0.001) {
+                const cross = new THREE.Vector3().crossVectors(this._currentForward, moveDir);
+                const sign = Math.sign(cross.dot(upNormal));
+                const maxStep = 10.0 * dt; // Turning speed
+                const stepAngle = Math.min(angleDiff, maxStep);
+                this._currentForward.applyAxisAngle(upNormal, stepAngle * sign);
+            }
+        }
 
-        // Final rotation = uprightQuat * headingQuat
-        this.mesh.quaternion.copy(uprightQuat).multiply(headingQuat);
+        // 3. Create Basis matrix and apply to mesh (model faces +Z natively)
+        const right = new THREE.Vector3().crossVectors(upNormal, this._currentForward).normalize();
+        const fwd = new THREE.Vector3().crossVectors(right, upNormal).normalize();
+
+        const m = new THREE.Matrix4();
+        m.makeBasis(right, upNormal, fwd);
+        this.mesh.quaternion.setFromRotationMatrix(m);
 
         // Compute speed for state manager
         const prev = this.prevPosition;
