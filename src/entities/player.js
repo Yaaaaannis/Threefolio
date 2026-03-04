@@ -104,12 +104,22 @@ export class Player {
 
         // Possession state
         this.isFrozen = false;
+        this.ragdollTime = 0;
     }
 
     /**
      * @param {number} dt
      */
     update(dt, camera) {
+        if (this.ragdollTime > 0) {
+            this.ragdollTime -= dt;
+            if (this.ragdollTime <= 0) {
+                // Recover from ragdoll
+                this.rigidBody.lockRotations(true, true);
+                this.rigidBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
+            }
+        }
+
         this._jumpCooldown = Math.max(0, this._jumpCooldown - dt);
 
         const pos = this.rigidBody.translation();
@@ -157,7 +167,7 @@ export class Player {
 
         // Build move direction in local tangent plane
         let dx = 0, dz = 0;
-        if (!this.isFrozen) {
+        if (!this.isFrozen && this.ragdollTime <= 0) {
             if (KEYS.ArrowUp) dz -= 1;
             if (KEYS.ArrowDown) dz += 1;
             if (KEYS.ArrowLeft) dx -= 1;
@@ -205,7 +215,7 @@ export class Player {
         if (!KEYS.Space) this._spaceReady = true;
 
         // Regular jump
-        if (!this.isFrozen && KEYS.Space && this._spaceReady && this._onGround && this._jumpCooldown === 0) {
+        if (!this.isFrozen && this.ragdollTime <= 0 && KEYS.Space && this._spaceReady && this._onGround && this._jumpCooldown === 0) {
             const jumpImp = upNormal.clone().multiplyScalar(JUMP_FORCE);
             this.rigidBody.applyImpulse({ x: jumpImp.x, y: jumpImp.y, z: jumpImp.z }, true);
             this._jumpCooldown = 0.35;
@@ -213,7 +223,7 @@ export class Player {
         }
 
         // Handle Punch (KeyF)
-        if (!this.isFrozen && KEYS.KeyF && this._punchCooldown <= 0) {
+        if (!this.isFrozen && this.ragdollTime <= 0 && KEYS.KeyF && this._punchCooldown <= 0) {
             this._punchCooldown = 0.5; // Half second cooldown
             this._punchAnimation = 0.15; // Animation duration
 
@@ -311,7 +321,7 @@ export class Player {
 
         // Manual ghost spawn triggering
         this.wantsToSpawnGhost = false;
-        if (!this.isFrozen && KEYS.KeyE) {
+        if (!this.isFrozen && this.ragdollTime <= 0 && KEYS.KeyE) {
             this.wantsToSpawnGhost = true;
             KEYS.KeyE = false; // "Consume" the keypress so it only triggers once per press
         }
@@ -320,37 +330,43 @@ export class Player {
         const newPos = this.rigidBody.translation();
         this.mesh.position.set(newPos.x, newPos.y, newPos.z);
 
-        // --- Calculate smooth rotation ---
-        // 1. Maintain _currentForward on the tangent plane
-        if (!this._currentForward) this._currentForward = new THREE.Vector3(0, 0, 1);
-        this._currentForward.projectOnPlane(upNormal).normalize();
-        if (this._currentForward.lengthSq() < 0.001) {
-            // fallback if it was perfectly aligned with upNormal
-            this._currentForward.set(upNormal.y, -upNormal.x, 0).normalize();
+        if (this.ragdollTime > 0) {
+            // physics-based rotation during ragdoll
+            const q = this.rigidBody.rotation();
+            this.mesh.quaternion.set(q.x, q.y, q.z, q.w);
+        } else {
+            // --- Calculate smooth rotation ---
+            // 1. Maintain _currentForward on the tangent plane
+            if (!this._currentForward) this._currentForward = new THREE.Vector3(0, 0, 1);
+            this._currentForward.projectOnPlane(upNormal).normalize();
             if (this._currentForward.lengthSq() < 0.001) {
-                this._currentForward.set(0, upNormal.z, -upNormal.y).normalize();
+                // fallback if it was perfectly aligned with upNormal
+                this._currentForward.set(upNormal.y, -upNormal.x, 0).normalize();
+                if (this._currentForward.lengthSq() < 0.001) {
+                    this._currentForward.set(0, upNormal.z, -upNormal.y).normalize();
+                }
             }
-        }
 
-        // 2. Smoothly rotate towards movement direction
-        if (len > 0) {
-            const angleDiff = this._currentForward.angleTo(moveDir);
-            if (angleDiff > 0.001) {
-                const cross = new THREE.Vector3().crossVectors(this._currentForward, moveDir);
-                const sign = Math.sign(cross.dot(upNormal));
-                const maxStep = 10.0 * dt; // Turning speed
-                const stepAngle = Math.min(angleDiff, maxStep);
-                this._currentForward.applyAxisAngle(upNormal, stepAngle * sign);
+            // 2. Smoothly rotate towards movement direction
+            if (len > 0) {
+                const angleDiff = this._currentForward.angleTo(moveDir);
+                if (angleDiff > 0.001) {
+                    const cross = new THREE.Vector3().crossVectors(this._currentForward, moveDir);
+                    const sign = Math.sign(cross.dot(upNormal));
+                    const maxStep = 10.0 * dt; // Turning speed
+                    const stepAngle = Math.min(angleDiff, maxStep);
+                    this._currentForward.applyAxisAngle(upNormal, stepAngle * sign);
+                }
             }
+
+            // 3. Create Basis matrix and apply to mesh (model faces +Z natively)
+            const right = new THREE.Vector3().crossVectors(upNormal, this._currentForward).normalize();
+            const fwd = new THREE.Vector3().crossVectors(right, upNormal).normalize();
+
+            const m = new THREE.Matrix4();
+            m.makeBasis(right, upNormal, fwd);
+            this.mesh.quaternion.setFromRotationMatrix(m);
         }
-
-        // 3. Create Basis matrix and apply to mesh (model faces +Z natively)
-        const right = new THREE.Vector3().crossVectors(upNormal, this._currentForward).normalize();
-        const fwd = new THREE.Vector3().crossVectors(right, upNormal).normalize();
-
-        const m = new THREE.Matrix4();
-        m.makeBasis(right, upNormal, fwd);
-        this.mesh.quaternion.setFromRotationMatrix(m);
 
         // Compute speed for state manager
         const prev = this.prevPosition;
@@ -374,6 +390,15 @@ export class Player {
             x: v.x + impulse.x * 2,
             y: v.y + impulse.y * 2,
             z: v.z + impulse.z * 2
+        }, true);
+
+        // --- Ragdoll Effect ---
+        this.ragdollTime = 3.0; // 3 seconds of ragdoll
+        this.rigidBody.lockRotations(false, true); // Unlock rotations
+        this.rigidBody.applyTorqueImpulse({
+            x: (Math.random() - 0.5) * impulse.length() * 2,
+            y: (Math.random() - 0.5) * impulse.length() * 2,
+            z: (Math.random() - 0.5) * impulse.length() * 2
         }, true);
     }
 

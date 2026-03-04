@@ -3,7 +3,7 @@ import * as THREE from 'three';
 const BOMB_RADIUS = 0.4;
 const LIFETIME_S = 3.0; // 3 seconds before explosion
 const EXPLOSION_RADIUS = 15.0; // Explosion area of effect
-const EXPLOSION_FORCE = 20.0; // Restored to a sensible impulse magnitude
+const EXPLOSION_FORCE = 10.0; // Restored to a sensible impulse magnitude
 
 export class ChatBomb {
     /**
@@ -173,15 +173,19 @@ export class ChatBomb {
 
     dispose() {
         this._alive = false;
-        this._scene.remove(this.mesh);
-        this.mesh.geometry.dispose();
-        this.mesh.material.dispose();
-        this.fuseMesh.geometry.dispose();
-        this.fuseMesh.material.dispose();
-        if (this.rigidBody) {
-            this._world.removeRigidBody(this.rigidBody);
-            this.rigidBody = null;
-            this.collider = null;
-        }
+
+        // Defer actual cleanup to avoid crashing Rapier if we are inside a physics step
+        setTimeout(() => {
+            this._scene.remove(this.mesh);
+            this.mesh.geometry.dispose();
+            this.mesh.material.dispose();
+            this.fuseMesh.geometry.dispose();
+            this.fuseMesh.material.dispose();
+            if (this.rigidBody) {
+                this._world.removeRigidBody(this.rigidBody);
+                this.rigidBody = null;
+                this.collider = null;
+            }
+        }, 0);
     }
 }
