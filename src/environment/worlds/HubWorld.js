@@ -6,15 +6,14 @@ import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { color, mix, texture, vec2, positionWorld, float, smoothstep, normalize, dot, max, floor, vec3, clamp } from 'three/tsl';
 import { BaseWorld } from './BaseWorld.js';
 import { Grass } from '../grass.js';
-import { Chess } from '../../entities/chess.js';
-import { CubeWall } from '../cubeWall.js';
-import { Football } from '../../entities/football.js';
 import { PortalZone } from '../portalZone.js';
-import { ChessZone } from '../chessZone.js';
 import { SpawnerZone } from '../spawnerZone.js';
 import { FollowerSphere } from '../../entities/followerSphere.js';
 import { Antenna } from '../../entities/antenna.js';
 import { SocialZone } from '../socialZone.js';
+import { Football } from '../../entities/football.js';
+import { StartPlane } from '../../entities/startPlane.js';
+
 
 export class HubWorld extends BaseWorld {
     constructor(onPortal) {
@@ -22,14 +21,12 @@ export class HubWorld extends BaseWorld {
         this._onPortal = onPortal; // (worldKey) => opens GalaxyMenu
         this._portals = [];
         this._grass = null;
-        this._chess = null;
-        this._cubeWall = null;
         this._football = null;
-        this._chessZone = null;
         this._spawnerZone = null;
         this._follower = null;
         this._antenna = null;
         this._socialZone = null;
+        this._startPlane = null;
     }
 
     get planetCenter() { return new THREE.Vector3(0, -50, 0); }
@@ -94,23 +91,13 @@ export class HubWorld extends BaseWorld {
         ));
         rapierWorld.createCollider(RAPIER.ColliderDesc.ball(PR), floorBody);
 
-        // ── Wall-jump corridor ────────────────────────────────────────────
-        this._addCorridor(scene, RAPIER, rapierWorld);
-
         // ── Grass ─────────────────────────────────────────────────────────
         this._grass = new Grass(scene);
-
-        // ── Chess ─────────────────────────────────────────────────────────
-        this._chess = new Chess(scene, RAPIER, rapierWorld, new THREE.Vector3(5, 0, -5));
-
-        // ── CubeWall ──────────────────────────────────────────────────────
-        this._cubeWall = new CubeWall(scene, RAPIER, rapierWorld, new THREE.Vector3(-6, 0, 8), 4, 4, 1.0);
 
         // ── Football ──────────────────────────────────────────────────────
         this._football = new Football(scene, RAPIER, rapierWorld);
 
         // ── Hub-specific zones ────────────────────────────────────────────
-        this._chessZone = new ChessZone(scene, new THREE.Vector3(-22, 0.05, 0));
         this._spawnerZone = new SpawnerZone(scene, RAPIER, rapierWorld);
         this._follower = new FollowerSphere(scene, new THREE.Vector3(-8, 5, -8));
 
@@ -135,7 +122,12 @@ export class HubWorld extends BaseWorld {
         const socialPos = antennaWorldPos.clone().addScaledVector(tangent, 3.5).addScaledVector(socialNormal, 0.05);
         this._socialZone = new SocialZone(scene, socialPos);
 
-        // Single portal near spawn — opens Galaxy Menu
+
+        // ── Start Plane ── near spawn ──────────────────────────────────────
+        console.log('[HubWorld] About to create StartPlane');
+        this._startPlane = new StartPlane(scene, new THREE.Vector3(0, 0.5, 0), 1);
+        console.log('[HubWorld] StartPlane created');
+
         const portalDir = new THREE.Vector3(0, 50, 4).normalize();
         const portalPt = PC.clone().addScaledVector(portalDir, PR + 0.05);
         const portal = new PortalZone(
@@ -147,20 +139,14 @@ export class HubWorld extends BaseWorld {
 
     update(dt, playerPos, time) {
         const TIMESTEP = 1 / 60;
-        this._chess?.update(TIMESTEP);
-        this._cubeWall?.update(TIMESTEP);
         this._football?.update(TIMESTEP);
         if (playerPos) {
-            const cubePositions = this._cubeWall?.cubes?.map(c => {
-                const t = c.rigidBody.translation();
-                return { x: t.x, z: t.z };
-            }) ?? [];
-            this._grass?.update(time, playerPos, true, cubePositions);
-            this._chessZone?.update(playerPos);
+            this._grass?.update(time, playerPos, true, []);
             this._spawnerZone?.update(playerPos);
             this._follower?.update(time, playerPos, dt ?? 0.016);
             this._antenna?.update(dt ?? 0.016);
             this._socialZone?.update(dt ?? 0.016, playerPos, time);
+            this._startPlane?.update(dt ?? 0.016, playerPos);
             for (const p of this._portals) p.update(playerPos, time);
         }
     }
@@ -180,16 +166,8 @@ export class HubWorld extends BaseWorld {
             this._spawnerZone.ringMesh.geometry?.dispose();
             this._spawnerZone.ringMesh.material?.dispose();
         }
-        // ChessZone ring
-        if (this._chessZone?.ringMesh) {
-            this.scene.remove(this._chessZone.ringMesh);
-            this._chessZone.ringMesh.geometry?.dispose();
-            this._chessZone.ringMesh.material?.dispose();
-        }
-        // Chess and Football: call their own dispose()
-        this._chess?.dispose();
+        // Football
         this._football?.dispose();
-        this._cubeWall?.dispose(); // removes every cube mesh + Rapier body
         // Follower sphere
         if (this._follower?.mesh) {
             this.scene.remove(this._follower.mesh);
@@ -199,22 +177,8 @@ export class HubWorld extends BaseWorld {
         this._antenna?.dispose();
         // Social Zone
         this._socialZone?.dispose();
+        // Start Plane
+        this._startPlane?.dispose();
         super.dispose();
-    }
-
-    _addCorridor(scene, RAPIER, world) {
-        const wallMat = new THREE.MeshStandardMaterial({ color: 0x778899, roughness: 0.8 });
-        const wH = 14, wT = 1, wL = 5, gap = 3, bX = 10, bZ = -5;
-
-        const mk = (x, y, z) => {
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(wT, wH, wL), wallMat);
-            mesh.position.set(x, y, z);
-            mesh.castShadow = mesh.receiveShadow = true;
-            this._track(mesh);
-            const b = this._addFixedBody(x, y, z);
-            world.createCollider(RAPIER.ColliderDesc.cuboid(wT / 2, wH / 2, wL / 2), b);
-        };
-        mk(bX - gap / 2 - wT / 2, wH / 2, bZ);
-        mk(bX + gap / 2 + wT / 2, wH / 2, bZ);
     }
 }

@@ -189,7 +189,26 @@ export class ChatCharacter {
         // Wandering state
         this._moveSpeed = 1.5 + Math.random() * 1.5; // units per second
         this._targetPos = position.clone();
-        this._hopVelocity = 0;
+
+        const plainText = message.trim();
+        const hasLetters = /[a-zA-Z]/.test(plainText);
+        const isAllCaps = hasLetters && plainText === plainText.toUpperCase();
+        const isSingleWord = plainText.split(/\s+/).length === 1 && message.length > 0;
+
+        if (isAllCaps && isSingleWord) {
+            this._volumeScale = 1.6;
+            this._hopVelocity = 15;
+        } else if (isAllCaps) {
+            this._volumeScale = 1.3;
+            this._hopVelocity = 10;
+        } else if (isSingleWord && emotes.length === 0) {
+            this._volumeScale = 0.6;
+            this._hopVelocity = 0;
+        } else {
+            this._volumeScale = 1.0;
+            this._hopVelocity = 0;
+        }
+
         this._hopGravity = -15;
         this._yOffset = 0; // vertical offset from surface
         this._nextHopTime = Math.random() * 2 + 1; // 1 to 3 seconds until first hop
@@ -236,7 +255,7 @@ export class ChatCharacter {
         this._wantsTexUpdate = () => { if (needsHackUpdate) { sprMat.needsUpdate = true; needsHackUpdate = false; } };
         // Position above head; scale to world units (canvas 512×256 → 2×1 world units)
         this._sprite.position.copy(this._head.position).addScaledVector(up, 2.2);
-        this._sprite.scale.set(4.5, 2.25, 1);
+        this._sprite.scale.set(4.5 * this._volumeScale, 2.25 * this._volumeScale, 1);
         scene.add(this._sprite);
 
         // ── Subtle spawn animation ────────────────────────────────────────
@@ -328,7 +347,7 @@ export class ChatCharacter {
             const s = t < 1 ? 1 + 0.3 * Math.sin(t * Math.PI) * (1 - t) : 1;
             this._body.scale.setScalar(s);
             this._head.scale.setScalar(s);
-            this._sprite.scale.set(4.5 * s, 2.25 * s, 1);
+            this._sprite.scale.set(4.5 * s * this._volumeScale, 2.25 * s * this._volumeScale, 1);
             if (t >= 1) this._spawnPhase = false;
         }
 
@@ -373,6 +392,26 @@ export class ChatCharacter {
      */
     updateMessage(message, twitchColor = '', emotes = []) {
         this._emotes = emotes;
+
+        const plainText = message.trim();
+        const hasLetters = /[a-zA-Z]/.test(plainText);
+        const isAllCaps = hasLetters && plainText === plainText.toUpperCase();
+        const isSingleWord = plainText.split(/\s+/).length === 1 && message.length > 0;
+
+        if (isAllCaps && isSingleWord) {
+            this._volumeScale = 1.6;
+            this._hopVelocity = 15;
+        } else if (isAllCaps) {
+            this._volumeScale = 1.3;
+            this._hopVelocity = 10;
+        } else if (isSingleWord && emotes.length === 0) {
+            this._volumeScale = 0.6;
+        } else {
+            this._volumeScale = 1.0;
+        }
+
+        this._sprite.scale.set(4.5 * this._volumeScale, 2.25 * this._volumeScale, 1);
+
         // Rebuild the bubble texture with the same color logic as constructor
         const resolvedHex = twitchColor
             ? twitchColor

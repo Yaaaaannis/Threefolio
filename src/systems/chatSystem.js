@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { TwitchChat } from './twitchChat.js';
 import { ChatCharacter } from '../entities/chatCharacter.js';
 import { ChatBomb } from '../entities/chatBomb.js';
+import { ChatEmoteDrop } from '../entities/chatEmoteDrop.js';
 
 const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
 const PLANET_RADIUS = 50;
@@ -30,6 +31,7 @@ export class ChatSystem {
         this._byUser = new Map();  // username → ChatCharacter (dedup)
         this._queue = [];         // buffered messages while player pos unknown
         this._bombs = [];         // active ChatBombs
+        this._emoteDrops = [];    // active ChatEmoteDrops
 
         this._twitch = new TwitchChat(channel, (username, message, color, emotes) => {
             const msg = message.trim().toLowerCase();
@@ -82,6 +84,14 @@ export class ChatSystem {
             const bomb = this._bombs[i];
             if (!bomb.update(dt)) {
                 this._bombs.splice(i, 1);
+            }
+        }
+
+        // Update active emote drops
+        for (let i = this._emoteDrops.length - 1; i >= 0; i--) {
+            const drop = this._emoteDrops[i];
+            if (!drop.update(dt)) {
+                this._emoteDrops.splice(i, 1);
             }
         }
     }
@@ -177,6 +187,8 @@ export class ChatSystem {
                 this._spawnBomb(existing._body.position.clone().add(new THREE.Vector3().subVectors(existing._body.position, PLANET_CENTER).normalize().multiplyScalar(1.0)));
             }
 
+            this._dropEmotes(emotes, playerPos);
+
             return;
         }
 
@@ -203,6 +215,32 @@ export class ChatSystem {
         if (message.toLowerCase().trim().includes('!bomb')) {
             this._spawnBomb(surfacePos.clone().add(dir.clone().multiplyScalar(1.0)));
         }
+
+        this._dropEmotes(emotes, playerPos);
+    }
+
+    _dropEmotes(emotes, playerPos) {
+        if (!emotes || emotes.length === 0) return;
+
+        // Count total emotes, cap at 10 to avoid too many physics objects
+        const maxDrops = 10;
+        let spawned = 0;
+
+        for (const em of emotes) {
+            if (spawned >= maxDrops) break;
+            const imgUrl = em.url || `https://static-cdn.jtvnw.net/emoticons/v2/${em.id}/default/light/3.0`;
+            const spawnPos = this._getRandomSurfacePos(playerPos, 15.0);
+            const upNormal = new THREE.Vector3().subVectors(spawnPos, PLANET_CENTER).normalize();
+            // drop gently above the player
+            const dropPos = spawnPos.clone().addScaledVector(upNormal, 8.0 + Math.random() * 5.0);
+            this._spawnEmoteDrop(imgUrl, dropPos);
+            spawned++;
+        }
+    }
+
+    _spawnEmoteDrop(imageUrl, position) {
+        const drop = new ChatEmoteDrop(this._scene, this._RAPIER, this._world, position, imageUrl);
+        this._emoteDrops.push(drop);
     }
 
     _spawnBomb(position) {

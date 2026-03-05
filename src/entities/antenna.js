@@ -30,6 +30,7 @@ export class Antenna {
         const loader = new GLTFLoader();
         loader.setDRACOLoader(dracoLoader);
         loader.load('/models/Antenna2.glb', (gltf) => {
+            console.log('[Model loaded] Antenna2.glb');
             this._root = gltf.scene;
             this._root.scale.setScalar(scale);
             this._root.position.copy(position);

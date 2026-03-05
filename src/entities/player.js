@@ -40,6 +40,7 @@ export class Player {
         this.currentAction = null;
 
         loader.load('/models/soldierdraco.glb', (gltf) => {
+            console.log('[Model loaded] soldierdraco.glb');
             const model = gltf.scene;
             model.scale.set(1.2, 1.2, 1.2);
             model.position.y = -0.4; // Align with ball bottom

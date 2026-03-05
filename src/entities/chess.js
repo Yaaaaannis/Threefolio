@@ -34,6 +34,7 @@ export class Chess {
         loader.setDRACOLoader(dracoLoader);
 
         loader.load('/models/chess.glb', (gltf) => {
+            console.log('[Model loaded] chess.glb');
             this.mesh = gltf.scene;
             this.mesh.position.copy(position);
             this.mesh.scale.set(60, 60, 60);

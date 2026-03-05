@@ -52,6 +52,7 @@ export class Football {
         const goalQuat = flipQuat.multiply(uprightQuat);
 
         loader.load('/models/3d_model_of_soccer__football_goal_post.glb', (gltf) => {
+            console.log('[Model loaded] football_goal_post.glb');
             const goal = gltf.scene;
 
             // Scale to reasonable world size
@@ -74,23 +75,54 @@ export class Football {
             this.goalMesh = goal; // store for dispose
             scene.add(goal);
 
-            // Fixed physics collider so the ball can bounce off the goal
+            // Fixed physics collider so the ball can bounce off the goal correctly
             goal.updateMatrixWorld(true);
+
+            // We use a fixed body at the center to parent our colliders
             const worldBox = new THREE.Box3().setFromObject(goal);
-            const worldSize = worldBox.getSize(new THREE.Vector3());
             const worldCenter = worldBox.getCenter(new THREE.Vector3());
 
             const rbDesc = this.RAPIER.RigidBodyDesc.fixed()
                 .setTranslation(worldCenter.x, worldCenter.y, worldCenter.z);
             this.goalBody = this.world.createRigidBody(rbDesc);
-            this.world.createCollider(
-                this.RAPIER.ColliderDesc.cuboid(
-                    worldSize.x / 2,
-                    worldSize.y / 2,
-                    worldSize.z / 2
-                ).setFriction(0.3).setRestitution(0.4),
-                this.goalBody
-            );
+
+            // Create precise trimesh colliders for every mesh in the goal
+            goal.traverse(node => {
+                if (node.isMesh && node.geometry) {
+                    node.updateMatrixWorld(true);
+
+                    const geom = node.geometry;
+                    if (geom.attributes.position) {
+                        const vArray = geom.attributes.position.array;
+                        const vertices = new Float32Array(vArray.length);
+
+                        // Convert local vertices to world coordinates manually
+                        const vec = new THREE.Vector3();
+                        for (let i = 0; i < vArray.length; i += 3) {
+                            vec.set(vArray[i], vArray[i + 1], vArray[i + 2]);
+                            vec.applyMatrix4(node.matrixWorld);
+                            // Important: Shift vertices so they are relative to the RigidBody's translation
+                            vertices[i] = vec.x - worldCenter.x;
+                            vertices[i + 1] = vec.y - worldCenter.y;
+                            vertices[i + 2] = vec.z - worldCenter.z;
+                        }
+
+                        let indices;
+                        if (geom.index) {
+                            indices = new Uint32Array(geom.index.array);
+                        } else {
+                            indices = new Uint32Array(vertices.length / 3);
+                            for (let i = 0; i < indices.length; i++) indices[i] = i;
+                        }
+
+                        const colliderDesc = this.RAPIER.ColliderDesc.trimesh(vertices, indices)
+                            .setFriction(0.3)
+                            .setRestitution(0.4);
+
+                        this.world.createCollider(colliderDesc, this.goalBody);
+                    }
+                }
+            });
         }, undefined, (err) => console.error('Failed to load goal:', err));
 
         // ── Soccer ball: dynamic, with spherical gravity ──────────────────
@@ -99,6 +131,7 @@ export class Football {
         );
 
         loader.load('/models/soccer_ball__football.glb', (gltf) => {
+            console.log('[Model loaded] soccer_ball.glb');
             this.ballMesh = gltf.scene;
 
             const box = new THREE.Box3().setFromObject(this.ballMesh);
