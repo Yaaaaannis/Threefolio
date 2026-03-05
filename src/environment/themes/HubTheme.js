@@ -35,8 +35,17 @@ export class HubTheme extends BaseTheme {
 
     get spawnPoint() { return new THREE.Vector3(0, 1.5, 0); }
 
-    load(scene, RAPIER, rapierWorld) {
-        super.load(scene, RAPIER, rapierWorld);
+    load(scene, RAPIER, rapierWorld, sceneSetup) {
+        super.load(scene, RAPIER, rapierWorld, sceneSetup);
+
+        // ── Atmosphere — hemisphere sky/ground light ──────────────────────
+        // Adds a warm golden sky tone from above and cool blue-green from below
+        this._hemiLight = new THREE.HemisphereLight(0xffeeb1, 0x4466aa, 0.5);
+        scene.add(this._hemiLight);
+
+        // ── Bloom post-processing ─────────────────────────────────────────
+        // Subtle bloom: only very bright areas (sky, glowing particles, lights) bleed
+        sceneSetup?.setupPostProcessing({ strength: 0.3, radius: 0.45, threshold: 0.82 });
 
         // ── Wall-jump corridor ────────────────────────────────────────────
 
@@ -102,6 +111,19 @@ export class HubTheme extends BaseTheme {
     }
 
     dispose() {
+        // Remove fog
+        if (this.scene) this.scene.fog = null;
+
+        // Remove hemisphere light
+        if (this._hemiLight) {
+            this.scene?.remove(this._hemiLight);
+            this._hemiLight.dispose?.();
+            this._hemiLight = null;
+        }
+
+        // Tear down bloom
+        this.sceneSetup?.teardownPostProcessing();
+
         // Grass
         if (this._grass?.mesh) {
             this.scene.remove(this._grass.mesh);

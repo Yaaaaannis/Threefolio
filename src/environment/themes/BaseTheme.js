@@ -16,10 +16,11 @@ export class BaseTheme {
     // ── Override in subclasses ────────────────────────────────────────────
 
     /** Called once to build the theme's surface decorations. */
-    load(scene, RAPIER, rapierWorld) {
+    load(scene, RAPIER, rapierWorld, sceneSetup = null) {
         this.scene = scene;
         this.RAPIER = RAPIER;
         this.rapierWorld = rapierWorld;
+        this.sceneSetup = sceneSetup;
     }
 
     /** Key used by PlanetCore.setTheme(). Override in each subclass. */

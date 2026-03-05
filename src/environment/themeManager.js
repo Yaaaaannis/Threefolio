@@ -17,11 +17,12 @@ export class ThemeManager {
      * @param {*} rapierWorld
      * @param {object} player
      */
-    constructor(scene, RAPIER, rapierWorld, player) {
+    constructor(scene, RAPIER, rapierWorld, player, sceneSetup = null) {
         this.scene = scene;
         this.RAPIER = RAPIER;
         this.rapierWorld = rapierWorld;
         this.player = player;
+        this.sceneSetup = sceneSetup;
 
         // Permanent planet — lives for the entire session
         this._planet = new PlanetCore(scene, RAPIER, rapierWorld);
@@ -43,7 +44,7 @@ export class ThemeManager {
     /** Load the first theme without animation. */
     async init(ThemeClass, ...extras) {
         this._current = new ThemeClass(...extras);
-        this._current.load(this.scene, this.RAPIER, this.rapierWorld);
+        this._current.load(this.scene, this.RAPIER, this.rapierWorld, this.sceneSetup);
         this._planet.setTheme(ThemeClass.themeKey ?? 'hub');
         this._syncPlayer();
     }
@@ -69,7 +70,7 @@ export class ThemeManager {
         this._current = null;
 
         const next = new ThemeClass(...extras);
-        next.load(this.scene, this.RAPIER, this.rapierWorld);
+        next.load(this.scene, this.RAPIER, this.rapierWorld, this.sceneSetup);
 
         // Capture new theme meshes and zero their scale for the in-animation
         this._inMeshes = (next._meshes ?? []).map(m => ({

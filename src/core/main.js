@@ -11,6 +11,7 @@ import { ChatSystem } from '../systems/chatSystem.js';
 import { state, updateState } from '../core/stateManager.js';
 import Stats from 'three/addons/libs/stats.module.js';
 import { initMobileControls } from '../ui/mobileControls.js';
+import { DebugGui } from '../core/debugGui.js';
 
 // World system
 import { ThemeManager } from '../environment/themeManager.js';
@@ -57,7 +58,7 @@ async function init() {
     const galaxyMenu = new GalaxyMenu((key) => travelTo(key));
 
     // Theme Manager — handles load/unload of one theme at a time on the permanent planet
-    const worldManager = new ThemeManager(scene, RAPIER, world, player);
+    const worldManager = new ThemeManager(scene, RAPIER, world, player, sceneSetup);
 
     // Travel callback — triggers world switch with crossfade
     const WORLD_MAP = {
@@ -76,6 +77,9 @@ async function init() {
 
     // Load Hub as first theme
     await worldManager.init(HubTheme, onPortal);
+
+    // Debug GUI (dev only — remove import for production)
+    new DebugGui(sceneSetup);
 
     // Timer setup moved lower where it's actually instantiated
 

@@ -1,7 +1,9 @@
 // scene.js — Three.js scene setup, isometric camera, lighting
 
 import * as THREE from 'three';
-import { WebGPURenderer } from 'three/webgpu';
+import { WebGPURenderer, RenderPipeline } from 'three/webgpu';
+import { pass } from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 
 const ISO_ANGLE = Math.PI / 4;      // 45° tilt from horizontal
@@ -20,7 +22,7 @@ export class SceneSetup {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.1;
+        this.renderer.toneMappingExposure = 0.35;
 
         // Scene
         this.scene = new THREE.Scene();
@@ -63,6 +65,9 @@ export class SceneSetup {
         // Day/Night Cycle
         this.timeOfDay = 1.0; // 1 = Day, 0 = Night
         this.targetTimeOfDay = 1.0;
+
+        // Post-processing pipeline (bloom, etc.) — null when inactive
+        this._postProcessing = null;
     }
 
     _setupLights() {
@@ -191,6 +196,35 @@ export class SceneSetup {
     }
 
     render() {
-        this.renderer.render(this.scene, this.camera);
+        if (this._postProcessing) {
+            this._postProcessing.render();
+        } else {
+            this.renderer.render(this.scene, this.camera);
+        }
+    }
+
+    /**
+     * Enable the bloom post-processing pipeline.
+     * @param {{ strength?: number, radius?: number, threshold?: number }} opts
+     */
+    setupPostProcessing({ strength = 0.35, radius = 0.4, threshold = 0.85 } = {}) {
+        if (this._postProcessing) return;
+        const pp = new RenderPipeline(this.renderer);
+        const scenePass = pass(this.scene, this.camera);
+        const scenePassColor = scenePass.getTextureNode('output');
+        const bloomPass = bloom(scenePassColor, strength, radius, threshold);
+        pp.outputNode = scenePassColor.add(bloomPass);
+        this._postProcessing = pp;
+        this._bloomNode = bloomPass; // keep ref for live GUI editing
+    }
+
+    /** Live-editable BloomNode (null when post-processing is off). */
+    get bloomNode() { return this._bloomNode; }
+
+    /** Disable the bloom post-processing pipeline and return to direct rendering. */
+    teardownPostProcessing() {
+        if (!this._postProcessing) return;
+        this._postProcessing = null;
+        this._bloomNode = null;
     }
 }

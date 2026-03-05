@@ -20,6 +20,8 @@ export class Chimney {
         // Smoke setup
         this._particles = null;
         this._pMat = null;
+        this._glowDisc = null;
+        this._glowLight = null;
         this._setupSmoke(scene, position);
 
         const dracoLoader = new DRACOLoader();
@@ -149,7 +151,7 @@ export class Chimney {
         const SPHERES_PER_PUFF = 6;
         for (let i = 0; i < this._PUFF_COUNT; i++) {
             const group = new THREE.Group();
-            const puffRadius = 0.35 + Math.random() * 0.25;
+            const puffRadius = 0.25 + Math.random() * 0.20;
             for (let j = 0; j < SPHERES_PER_PUFF; j++) {
                 // IcosahedronGeometry (detail=1) gives the low-poly faceted look
                 const sz = puffRadius * (0.7 + Math.random() * 0.6);
@@ -183,6 +185,37 @@ export class Chimney {
                 .addScaledVector(this._tangentB, (Math.random() - 0.5) * jitter)
             );
         }
+
+        // ── Glow disc — emissive yellow circle at smoke exit ──────────────
+        const discGeo = new THREE.CircleGeometry(0.45, 16);
+        const discMat = new THREE.MeshStandardMaterial({
+            color: 0xffaa00,
+            emissive: new THREE.Color(0xffaa00),
+            emissiveIntensity: 2.5,
+            transparent: true,
+            opacity: 0.85,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+        });
+        this._glowDisc = new THREE.Mesh(discGeo, discMat);
+
+        // Align disc to face along the surface normal (it spawns XY-plane by default)
+        const alignQuat = new THREE.Quaternion().setFromUnitVectors(
+            new THREE.Vector3(0, 0, 1),
+            this._surfaceNormal
+        );
+        this._glowDisc.quaternion.copy(alignQuat);
+        // Place it just below the smoke spawn (slightly below the chimney top)
+        this._glowDisc.position.copy(this._spawnPos)
+            .addScaledVector(this._surfaceNormal, -0.5);
+        this._glowDisc.renderOrder = 1;
+        scene.add(this._glowDisc);
+
+        // ── Point light above the disc for ambient warm glow ──────────────
+        this._glowLight = new THREE.PointLight(0xffaa00, 3.0, 8.0);
+        this._glowLight.position.copy(this._spawnPos)
+            .addScaledVector(this._surfaceNormal, 0.3);
+        scene.add(this._glowLight);
     }
 
     _respawnPuff(i) {
@@ -217,7 +250,7 @@ export class Chimney {
                 : t < 0.6
                     ? 1.0
                     : (1.0 - (t - 0.6) / 0.4);
-            const s = Math.max(0.01, scaleBase * (0.8 + (i % 3) * 0.3));
+            const s = Math.max(0.01, scaleBase * (0.65 + (i % 3) * 0.25));
 
             // Rise along surface normal
             const rise = t * MAX_HEIGHT;
@@ -233,6 +266,14 @@ export class Chimney {
             this._puffs[i].scale.setScalar(s);
             // Slow spin of the group for variety
             this._puffs[i].rotation.y += dt * 0.3;
+        }
+
+        // Pulse the glow disc and light
+        if (this._glowDisc && this._glowLight) {
+            const pulse = 1.0 + 0.35 * Math.sin(this._time * 3.5);
+            this._glowDisc.material.emissiveIntensity = 2.5 * pulse;
+            this._glowDisc.material.opacity = 0.7 + 0.15 * Math.sin(this._time * 2.8);
+            this._glowLight.intensity = 3.0 * pulse;
         }
     }
 
@@ -264,6 +305,17 @@ export class Chimney {
             }
             this._pMat?.dispose();
             this._puffs = null;
+        }
+
+        if (this._glowDisc) {
+            this._scene.remove(this._glowDisc);
+            this._glowDisc.geometry?.dispose();
+            this._glowDisc.material?.dispose();
+            this._glowDisc = null;
+        }
+        if (this._glowLight) {
+            this._scene.remove(this._glowLight);
+            this._glowLight = null;
         }
     }
 }
