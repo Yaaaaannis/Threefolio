@@ -3,8 +3,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { MeshStandardNodeMaterial, MeshBasicNodeMaterial } from 'three/webgpu';
-import { color, time, sin, mix, float, texture, uniform, vec3, normalView } from 'three/tsl';
+import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { color, time, sin, mix, float } from 'three/tsl';
 
 export class StartPlane {
     /**
@@ -20,13 +20,6 @@ export class StartPlane {
         this._rapierWorld = rapierWorld;
         this._rigidBody = null;
         this._onEnter = onEnter;
-        this._glowLight = null;
-        this._proximityUniform = uniform(0); // Tracks proximity in the shader
-
-        // Surface normal for the planet surface at this position
-        const PLANET_CENTER = new THREE.Vector3(0, -50, 0);
-        this._surfaceNormal = new THREE.Vector3().subVectors(position, PLANET_CENTER).normalize();
-        this._position = position.clone();
 
         // Track enter key for portal
         this._enterPressed = false;
@@ -130,49 +123,48 @@ export class StartPlane {
                             this._startMesh = node;
                             this._startMesh.position.y += 0.03;
 
+                            // Mario Galaxy style glow material using TSL, keeping original map
                             const oldMat = node.material;
+
+                            // If the model has a texture, we use it for the base color
                             let baseColorNode;
-
                             if (oldMat && oldMat.map) {
-                                baseColorNode = texture(oldMat.map);
-                                const pulse = mix(
-                                    float(0.9),
-                                    float(1.5),
-                                    sin(time.mul(3.0)).remap(-1, 1, 0, 1)
-                                );
+                                // We must use TSL texture() to read the map
+                                import('three/tsl').then(({ texture }) => {
+                                    baseColorNode = texture(oldMat.map);
 
-                                const yellowColor = color(0xffd700);
-                                // Proximity boost: make it super bright (Bloom) when active
-                                const boost = this._proximityUniform.mul(2.0);
+                                    const pulse = mix(
+                                        float(0.8),
+                                        float(2.0), // Boost emissive
+                                        sin(time.mul(3.0)).map(-1, 1, 0, 1)
+                                    );
 
-                                node.material = new MeshBasicNodeMaterial({
-                                    colorNode: baseColorNode.mul(yellowColor).mul(pulse).add(boost),
-                                    transparent: true,
-                                    opacity: 0.95
+                                    node.material = new MeshStandardNodeMaterial({
+                                        colorNode: baseColorNode,
+                                        emissiveNode: baseColorNode.mul(pulse),
+                                        transparent: true,
+                                        opacity: 0.9,
+                                        roughness: 0.2,
+                                        metalness: 0.1
+                                    });
                                 });
                             } else {
-                                const baseYellow = color(0xffd700);
+                                const baseColor = color(0x00ffff);
+                                const glowColor = color(0x88ffff);
                                 const pulse = mix(
-                                    float(0.8),
-                                    float(1.2),
-                                    sin(time.mul(3.0)).remap(-1, 1, 0, 1)
+                                    float(0.5),
+                                    float(1.5),
+                                    sin(time.mul(3.0)).map(-1, 1, 0, 1)
                                 );
-
-                                const boost = this._proximityUniform.mul(3.0);
-
-                                node.material = new MeshBasicNodeMaterial({
-                                    colorNode: baseYellow.mul(pulse).add(boost),
+                                node.material = new MeshStandardNodeMaterial({
+                                    colorNode: baseColor,
+                                    emissiveNode: glowColor.mul(pulse),
                                     transparent: true,
-                                    opacity: 0.95
+                                    opacity: 0.9,
+                                    roughness: 0.2,
+                                    metalness: 0.1
                                 });
                             }
-
-                            // PointLight: émet de la vraie lumière jaune dans la scène
-                            // Wide distance to light the whole area, not just a point
-                            this._glowLight = new THREE.PointLight(0xffd700, 20.0, 30);
-                            const lightPos = this._position.clone().addScaledVector(this._surfaceNormal, 3.0);
-                            this._glowLight.position.copy(lightPos);
-                            scene.add(this._glowLight);
 
                             // NO physics collider for the 'start' part (intangible)
                         }
@@ -230,12 +222,8 @@ export class StartPlane {
         const dz = playerPos.z - this._root.position.z;
         const distSq = dx * dx + dz * dz;
 
-        // Within ~6 units radius (36 squared) to account for scale 7 pad
-        const isNear = distSq < 36.0;
-
-        // Smoothly update the proximity uniform for the shader
-        const targetProx = isNear ? 1.0 : 0.0;
-        this._proximityUniform.value += (targetProx - this._proximityUniform.value) * dt * 4.0;
+        // Within ~3 units horizontal radius (9 squared)
+        const isNear = distSq < 9.0;
 
         // Always make it float gently (Mario Galaxy style)
         // Flotte entre sa hauteur de base (décalée de 0.03 au chargement) et -0.002 en dessous.
@@ -251,14 +239,6 @@ export class StartPlane {
         // -2.0 * 0.03 = -0.06
         const floatOffset = (Math.sin(this._floatAccumulator * 3.0) - 1.0) * 0.01;
         this._startMesh.position.y = this._baseStartY + floatOffset;
-
-        // Pulse la lumière en sync avec le TSL emissive (même courbe sin, côté CPU)
-        if (this._glowLight) {
-            const t = Math.sin(this._floatAccumulator * 3.0) * 0.5 + 0.5; // 0..1
-            const baseIntensity = 8.0 + t * 15.0; // Base pulse
-            // Boost intensity further when player is on the pad
-            this._glowLight.intensity = baseIntensity + this._proximityUniform.value * 20.0;
-        }
 
         if (isNear) {
             this._startMesh.rotation.y -= dt * 2.0;
@@ -300,11 +280,6 @@ export class StartPlane {
         if (this._rigidBody && this._rapierWorld) {
             this._rapierWorld.removeRigidBody(this._rigidBody);
             this._rigidBody = null;
-        }
-
-        if (this._glowLight) {
-            this._scene.remove(this._glowLight);
-            this._glowLight = null;
         }
 
         if (this._root) {

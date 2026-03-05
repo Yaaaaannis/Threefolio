@@ -54,7 +54,7 @@ export class HubTheme extends BaseTheme {
         this._grass = new Grass(scene);
 
         // ── CubeWall ──────────────────────────────────────────────────────
-        this._cubeWall = new CubeWall(scene, RAPIER, rapierWorld, new THREE.Vector3(-6, 0, 8), 4, 4, 1.0);
+        this._cubeWall = new CubeWall(scene, RAPIER, rapierWorld, new THREE.Vector3(-10, 0, 8), 4, 4, 1.0);
 
         // ── Football ──────────────────────────────────────────────────────
         this._football = new Football(scene, RAPIER, rapierWorld);

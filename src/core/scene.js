@@ -1,7 +1,7 @@
 // scene.js — Three.js scene setup, isometric camera, lighting
 
 import * as THREE from 'three';
-import { WebGPURenderer, RenderPipeline } from 'three/webgpu';
+import { WebGPURenderer, PostProcessing } from 'three/webgpu';
 import { pass } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
@@ -209,7 +209,7 @@ export class SceneSetup {
      */
     setupPostProcessing({ strength = 0.35, radius = 0.4, threshold = 0.85 } = {}) {
         if (this._postProcessing) return;
-        const pp = new RenderPipeline(this.renderer);
+        const pp = new PostProcessing(this.renderer);
         const scenePass = pass(this.scene, this.camera);
         const scenePassColor = scenePass.getTextureNode('output');
         const bloomPass = bloom(scenePassColor, strength, radius, threshold);
