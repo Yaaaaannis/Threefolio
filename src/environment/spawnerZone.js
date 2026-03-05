@@ -58,7 +58,7 @@ export class SpawnerZone {
         const colors = [0xff4444, 0x44ff44, 0x4444ff]; // Red, Green, Blue
 
         for (let i = 0; i < 3; i++) {
-            const mat = new THREE.MeshStandardMaterial({ color: colors[i] });
+            const mat = new THREE.MeshToonMaterial({ color: colors[i] });
             const mesh = new THREE.Mesh(cubeGeo, mat);
             mesh.castShadow = true;
             mesh.receiveShadow = true;

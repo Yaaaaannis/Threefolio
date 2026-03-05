@@ -22,8 +22,8 @@ export class CubeWall {
 
         const cubeGeo = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
         // Alternate colors for a checkered/brick look
-        const mat1 = new THREE.MeshStandardMaterial({ color: 0x888888 }); // Gray
-        const mat2 = new THREE.MeshStandardMaterial({ color: 0xcc4444 }); // Brick red
+        const mat1 = new THREE.MeshToonMaterial({ color: 0x888888 }); // Gray
+        const mat2 = new THREE.MeshToonMaterial({ color: 0xcc4444 }); // Brick red
 
         // Build the wall
         for (let r = 0; r < rows; r++) {
