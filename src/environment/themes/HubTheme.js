@@ -12,6 +12,7 @@ import { SpawnerZone } from '../spawnerZone.js';
 import { FollowerSphere } from '../../entities/followerSphere.js';
 import { StartPlane } from '../../entities/startPlane.js';
 import { Chimney } from '../../entities/chimney.js';
+import { Lamp } from '../../entities/lamp.js';
 
 const PC = new THREE.Vector3(0, -50, 0);
 const PR = 50;
@@ -31,6 +32,7 @@ export class HubTheme extends BaseTheme {
         this._socialZone = null;
         this._startPlane = null;
         this._chimney = null;
+        this._lamp = null;
     }
 
     get spawnPoint() { return new THREE.Vector3(0, 1.5, 0); }
@@ -82,6 +84,13 @@ export class HubTheme extends BaseTheme {
             RAPIER,
             rapierWorld
         );
+
+        // ── Lamp ───────────────────────────────────────────────────────────
+        this._lamp = new Lamp(
+            scene,
+            20 // Max instances
+        );
+        if (sceneSetup) sceneSetup.lamp = this._lamp;
     }
 
 
@@ -151,6 +160,8 @@ export class HubTheme extends BaseTheme {
         this._socialZone?.dispose();
         this._startPlane?.dispose();
         this._chimney?.dispose();
+        if (this.sceneSetup) this.sceneSetup.lamp = null;
+        this._lamp?.dispose();
         super.dispose();
     }
 

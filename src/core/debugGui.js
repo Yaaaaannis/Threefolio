@@ -34,12 +34,21 @@ export class DebugGui {
 
             // Ambient light
             ambientIntensity: sceneSetup.ambientLight?.intensity ?? 0.7,
+
+            // Lamp
+            lampIntensity: 59,
+            lampDistance: 1,
+            lampColor: '#d1d100',
+            lampSpawnCount: 10,
+            lampSpawnRange: 30,
+            lampEmissiveIntensity: 5.0,
         };
 
         this._buildBloomFolder();
         this._buildRenderFolder();
         this._buildFogFolder();
         this._buildLightsFolder();
+        this._buildLampFolder();
     }
 
     // ── Bloom ──────────────────────────────────────────────────────────────
@@ -145,6 +154,56 @@ export class DebugGui {
                 sc.dirLight.color.set(v);
             });
         }
+    }
+
+    // ── Lamp ──────────────────────────────────────────────────────────────
+
+    _buildLampFolder() {
+        const f = this._gui.addFolder('🔦 Lamp (Performance)');
+        f.open();
+
+        f.add(this._state, 'lampIntensity', 0, 100, 1).name('Intensity').onChange(v => {
+            if (this._sceneSetup.lamp) {
+                this._sceneSetup.lamp.updateLights(v, undefined, undefined, undefined);
+            }
+        });
+
+        f.add(this._state, 'lampDistance', 0, 100, 1).name('Distance').onChange(v => {
+            if (this._sceneSetup.lamp) {
+                this._sceneSetup.lamp.updateLights(undefined, v, undefined, undefined);
+            }
+        });
+
+        f.addColor(this._state, 'lampColor').name('Color').onChange(v => {
+            if (this._sceneSetup.lamp) {
+                this._sceneSetup.lamp.updateLights(undefined, undefined, v, undefined);
+            }
+        });
+
+        f.add(this._state, 'lampEmissiveIntensity', 0, 100, 0.5).name('Emissive Intensity').onChange(v => {
+            if (this._sceneSetup.lamp) {
+                this._sceneSetup.lamp.updateLights(undefined, undefined, undefined, v);
+            }
+        });
+
+        f.add(this._state, 'lampSpawnCount', 1, 100, 1).name('Spawn Count');
+        f.add(this._state, 'lampSpawnRange', 5, 50, 1).name('Spawn Range');
+
+        const spawnObj = {
+            spawn: () => {
+                if (this._sceneSetup.lamp) {
+                    this._sceneSetup.lamp.spawnRandom(this._state.lampSpawnCount, this._state.lampSpawnRange);
+                }
+            },
+            clear: () => {
+                if (this._sceneSetup.lamp) {
+                    this._sceneSetup.lamp.clearAll();
+                }
+            }
+        };
+
+        f.add(spawnObj, 'spawn').name('🚀 Spawn Random');
+        f.add(spawnObj, 'clear').name('🗑 Clear All');
     }
 
     dispose() {

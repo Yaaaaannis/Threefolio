@@ -68,6 +68,9 @@ export class SceneSetup {
 
         // Post-processing pipeline (bloom, etc.) — null when inactive
         this._postProcessing = null;
+
+        /** @type {import('../entities/lamp.js').Lamp | null} */
+        this.lamp = null;
     }
 
     _setupLights() {
