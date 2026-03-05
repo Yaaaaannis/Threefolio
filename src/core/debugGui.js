@@ -36,12 +36,10 @@ export class DebugGui {
             ambientIntensity: sceneSetup.ambientLight?.intensity ?? 0.7,
 
             // Lamp
-            lampIntensity: 59,
-            lampDistance: 1,
             lampColor: '#d1d100',
             lampSpawnCount: 10,
             lampSpawnRange: 30,
-            lampEmissiveIntensity: 5.0,
+            lampEmissiveIntensity: 38.5,
         };
 
         this._buildBloomFolder();
@@ -159,20 +157,8 @@ export class DebugGui {
     // ── Lamp ──────────────────────────────────────────────────────────────
 
     _buildLampFolder() {
-        const f = this._gui.addFolder('🔦 Lamp (Performance)');
+        const f = this._gui.addFolder('🔦 Lamp (Emissive Only)');
         f.open();
-
-        f.add(this._state, 'lampIntensity', 0, 100, 1).name('Intensity').onChange(v => {
-            if (this._sceneSetup.lamp) {
-                this._sceneSetup.lamp.updateLights(v, undefined, undefined, undefined);
-            }
-        });
-
-        f.add(this._state, 'lampDistance', 0, 100, 1).name('Distance').onChange(v => {
-            if (this._sceneSetup.lamp) {
-                this._sceneSetup.lamp.updateLights(undefined, v, undefined, undefined);
-            }
-        });
 
         f.addColor(this._state, 'lampColor').name('Color').onChange(v => {
             if (this._sceneSetup.lamp) {

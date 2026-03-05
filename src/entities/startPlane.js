@@ -136,7 +136,7 @@ export class StartPlane {
                                     const pulse = mix(
                                         float(0.8),
                                         float(2.0), // Boost emissive
-                                        sin(time.mul(3.0)).map(-1, 1, 0, 1)
+                                        sin(time.mul(3.0)).add(1).mul(0.5)
                                     );
 
                                     node.material = new MeshStandardNodeMaterial({
@@ -154,7 +154,7 @@ export class StartPlane {
                                 const pulse = mix(
                                     float(0.5),
                                     float(1.5),
-                                    sin(time.mul(3.0)).map(-1, 1, 0, 1)
+                                    sin(time.mul(3.0)).add(1).mul(0.5)
                                 );
                                 node.material = new MeshStandardNodeMaterial({
                                     colorNode: baseColor,

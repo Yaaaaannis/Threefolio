@@ -10,11 +10,10 @@ export class Lamp {
     constructor(scene, maxInstances = 200) {
         this._scene = scene;
         this._maxInstances = maxInstances;
-        this._instances = []; // Array of { matrix, pos, light }
+        this._instances = []; // Array of { matrix, pos }
 
         this._modelLoaded = false;
         this._instancedMeshes = []; // Array of { instancedMesh, originalMesh }
-        this._lightLocalPos = new THREE.Vector3();
 
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -25,13 +24,10 @@ export class Lamp {
         loader.load(
             '/models/lampadaire.glb',
             (gltf) => {
-                console.log('[Lamp] Model loaded for lighted instancing (no shadows)');
+                console.log('[Lamp] Model loaded for emissive-only instancing');
 
-                // Extract meshes and light position
+                // Extract meshes
                 gltf.scene.traverse(node => {
-                    if (node.name === 'light') {
-                        this._lightLocalPos.copy(node.position);
-                    }
                     if (node.isMesh) {
                         const im = new THREE.InstancedMesh(node.geometry, node.material, maxInstances);
                         im.castShadow = false;
@@ -39,9 +35,8 @@ export class Lamp {
                         im.count = 0;
                         im.name = node.name;
 
-                        // Ensure material supports radiation if it's a bulb/glass
-                        const name = node.name.toLowerCase();
-                        if (name.includes('bulb') || name.includes('glass') || name.includes('light')) {
+                        // Ensure material supports radiation if it's the yellow bulb ("Plane_2")
+                        if (node.name === 'Plane_2') {
                             im.material = node.material.clone();
                             im.material.emissive = new THREE.Color(0xd1d100);
                             im.material.emissiveIntensity = 5.0;
@@ -53,7 +48,6 @@ export class Lamp {
                 });
 
                 this._modelLoaded = true;
-                // Add initial lamp at original requested position
                 this.addInstance(new THREE.Vector3(-15, -3, 5), 2);
             }
         );
@@ -80,19 +74,9 @@ export class Lamp {
         dummy.quaternion.copy(alignQuat);
         dummy.updateMatrix();
 
-        // PERFORMANCE: PointLight without shadows
-        const light = new THREE.PointLight(0xd1d100, 59, 1);
-        light.castShadow = false;
-
-        // Position light based on the "light" empty local pos in the model
-        const worldLightPos = this._lightLocalPos.clone()
-            .applyMatrix4(dummy.matrix);
-        light.position.copy(worldLightPos);
-        this._scene.add(light);
-
         // Track instance
         const index = this._instances.length;
-        this._instances.push({ matrix: dummy.matrix.clone(), pos: position.clone(), scale, light });
+        this._instances.push({ matrix: dummy.matrix.clone(), pos: position.clone(), scale });
 
         // Update InstancedMeshes
         for (const { instancedMesh } of this._instancedMeshes) {
@@ -125,12 +109,6 @@ export class Lamp {
     }
 
     clearAll() {
-        for (const inst of this._instances) {
-            if (inst.light) {
-                this._scene.remove(inst.light);
-                inst.light.dispose();
-            }
-        }
         this._instances = [];
         for (const { instancedMesh } of this._instancedMeshes) {
             instancedMesh.count = 0;
@@ -139,17 +117,9 @@ export class Lamp {
     }
 
     updateLights(intensity, distance, color, emissiveIntensity) {
-        for (const inst of this._instances) {
-            if (inst.light) {
-                if (intensity !== undefined) inst.light.intensity = intensity;
-                if (distance !== undefined) inst.light.distance = distance;
-                if (color !== undefined) inst.light.color.set(color);
-            }
-        }
         if (emissiveIntensity !== undefined || color !== undefined) {
             for (const { instancedMesh } of this._instancedMeshes) {
-                const name = instancedMesh.name.toLowerCase();
-                if (name.includes('bulb') || name.includes('glass') || name.includes('light')) {
+                if (instancedMesh.name === 'Plane_2') {
                     if (instancedMesh.material) {
                         if (emissiveIntensity !== undefined) instancedMesh.material.emissiveIntensity = emissiveIntensity;
                         if (color !== undefined) instancedMesh.material.emissive.set(color);
