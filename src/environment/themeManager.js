@@ -120,8 +120,8 @@ export class ThemeManager {
             }
         }
 
-        // Update active theme
-        this._current?.update(dt, playerPos, time, chatPositions);
+        // Update active theme (player passed for entities that need rigidBody access)
+        this._current?.update(dt, playerPos, time, chatPositions, this.player);
     }
 
     // ── Internal ──────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ export class BaseTheme {
     static get themeKey() { return 'hub'; }
 
     /** Called every frame by ThemeManager (optional override). */
-    update(_dt, _playerPos, _time) { }
+    update(_dt, _playerPos, _time, _chatPositions, _player) { }
 
     // ── Helpers — use these to track objects for cleanup ─────────────────
 

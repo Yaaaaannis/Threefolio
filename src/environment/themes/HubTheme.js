@@ -14,6 +14,8 @@ import { StartPlane } from '../../entities/startPlane.js';
 import { Chimney } from '../../entities/chimney.js';
 import { Lamp } from '../../entities/lamp.js';
 import { SocialZone } from '../socialZone.js';
+import { Trampoline } from '../../entities/trampoline.js';
+import { JumpRope } from '../../entities/jumpRope.js';
 
 
 const PC = new THREE.Vector3(0, -50, 0);
@@ -35,6 +37,8 @@ export class HubTheme extends BaseTheme {
         this._startPlane = null;
         this._chimney = null;
         this._lamp = null;
+        this._trampoline = null;
+        this._jumpRope   = null;
     }
 
     get spawnPoint() { return new THREE.Vector3(0, 1.5, 0); }
@@ -97,6 +101,18 @@ export class HubTheme extends BaseTheme {
         if (sceneSetup) sceneSetup.lamp = this._lamp;
         if (sceneSetup) sceneSetup.chimney = this._chimney;
 
+        // ── Trampoline ────────────────────────────────────────────────────
+        this._trampoline = new Trampoline(
+            scene,
+            new THREE.Vector3(10, 1, 0),
+            2.0,
+            RAPIER,
+            rapierWorld
+        );
+
+        // ── Jump Rope ─────────────────────────────────────────────────────
+        this._jumpRope = new JumpRope(scene, new THREE.Vector3(5, 1, 12));
+
         // ── Social Media Zone ─────────────────────────────────────────────
         const socialPos = new THREE.Vector3(-10, -4, -20);
         this._socialZone = new SocialZone(scene, socialPos, null, RAPIER, rapierWorld);
@@ -104,7 +120,7 @@ export class HubTheme extends BaseTheme {
 
 
 
-    update(dt, playerPos, time, chatPositions = []) {
+    update(dt, playerPos, time, chatPositions = [], player = null) {
         const TIMESTEP = 1 / 60;
         this._cubeWall?.update(TIMESTEP);
         this._football?.update(TIMESTEP);
@@ -126,6 +142,8 @@ export class HubTheme extends BaseTheme {
             this._socialZone?.update(dt ?? 0.016, playerPos, time);
             this._startPlane?.update(dt ?? 0.016, playerPos);
             this._chimney?.update(dt ?? 0.016);
+            this._trampoline?.update(dt ?? 0.016, player);
+            this._jumpRope?.update(dt ?? 0.016, player);
         }
     }
 
@@ -173,6 +191,8 @@ export class HubTheme extends BaseTheme {
         if (this.sceneSetup) this.sceneSetup.lamp = null;
         if (this.sceneSetup) this.sceneSetup.chimney = null;
         this._lamp?.dispose();
+        this._trampoline?.dispose();
+        this._jumpRope?.dispose();
         super.dispose();
     }
 
