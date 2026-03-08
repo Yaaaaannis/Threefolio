@@ -1,5 +1,9 @@
 // jumpRope.js — Skip rope zone with animated rope and jump counter
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { MeshBasicNodeMaterial } from 'three/webgpu';
+import { time, uv, sin, float, texture as texNode, vec4 } from 'three/tsl';
 
 const ROPE_SPEED_BASE  = 0.85;  // revolutions/second at start
 const ROPE_SPEED_STEP  = 0.08;  // added every SPEED_MILESTONE jumps
@@ -50,11 +54,15 @@ export class JumpRope {
         this._flashTimer  = 0;
         this._flashType   = null;
 
+        // Portal model state
+        this._portalRoot  = null;
+        this._screenMesh  = null;
+
         this._meshes = [];
         this._buildPosts();
         this._buildRope();
         this._buildZoneRing();
-        this._buildScoreDisplay();
+        this._buildPortalDisplay();
     }
 
     // ── Scene construction ────────────────────────────────────────────────
@@ -107,91 +115,156 @@ export class JumpRope {
         this._meshes.push(this._zoneRing);
     }
 
-    _buildScoreDisplay() {
+    _buildPortalDisplay() {
+        // Canvas texture for score rendering
         this._canvas      = document.createElement('canvas');
-        this._canvas.width  = 256;
+        this._canvas.width  = 512;
         this._canvas.height = 256;
         this._ctx          = this._canvas.getContext('2d');
         this._scoreTex     = new THREE.CanvasTexture(this._canvas);
-
-        // Sprite = auto-billboard toward camera
-        this._scoreSprite = new THREE.Sprite(
-            new THREE.SpriteMaterial({ map: this._scoreTex, transparent: true })
-        );
-        this._scoreSprite.scale.set(3.5, 3.5, 1);
-        this._scoreSprite.position.copy(this._pos)
-            .addScaledVector(this._tB, ROPE_HALF_SPAN + 2.0)
-            .addScaledVector(this._normal, 3.5);
-        this._scene.add(this._scoreSprite);
         this._drawScore();
+
+        // Load portal model
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+
+        const loader = new GLTFLoader();
+        loader.setDRACOLoader(dracoLoader);
+
+        loader.load('/models/portaltest3.glb', (gltf) => {
+            this._portalRoot = gltf.scene;
+
+            // Position: offset along _tB (perpendicular to rope span) + up
+            const displayPos = this._pos.clone()
+                .addScaledVector(this._tB, ROPE_HALF_SPAN + 2.5)
+                .addScaledVector(this._normal, 0.0);
+
+            this._portalRoot.position.copy(displayPos);
+
+            // Align model up-axis with planet normal, then rotate 90° around it
+            const rotY90 = new THREE.Quaternion().setFromAxisAngle(this._normal, Math.PI / 2);
+            this._portalRoot.quaternion.copy(this._qY).premultiply(rotY90);
+
+            this._portalRoot.scale.setScalar(0.55 * 3);
+
+            this._scene.add(this._portalRoot);
+
+            // Find the screnn mesh and apply hologram material
+            this._portalRoot.traverse((child) => {
+                if (child.isMesh && child.name === 'screnn') {
+                    this._screenMesh = child;
+                    this._applyHologramMaterial(child);
+                }
+            });
+        });
+    }
+
+    _applyHologramMaterial(mesh) {
+        const mat = new MeshBasicNodeMaterial({
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+        });
+
+        // Canvas texture node
+        const canvasTex = texNode(this._scoreTex);
+
+        // Animated scanlines: bright bands scrolling upward
+        const scanlineY  = uv().y.mul(float(40.0)).sub(time.mul(float(2.5)));
+        const scanline   = sin(scanlineY).mul(float(0.5)).add(float(0.5));  // 0..1
+        const scanBright = scanline.mul(float(0.18)).add(float(0.82));       // subtle 0.82..1.0
+
+        // Horizontal edge fade (vignette along X): x*(1-x)*4
+        const uvX       = uv().x;
+        const edgeFadeX = uvX.mul(float(1.0).sub(uvX)).mul(float(4.0)).clamp(float(0.0), float(1.0));
+
+        // Sample canvas
+        const col = canvasTex;
+
+        // Combine: canvas color * scanline brightness, alpha from canvas * edge fade
+        const finalColor = col.rgb.mul(scanBright);
+        const finalAlpha = col.a.mul(edgeFadeX).mul(float(0.95));
+
+        mat.colorNode  = vec4(finalColor, finalAlpha);
+
+        mesh.material = mat;
+        mesh.material.needsUpdate = true;
     }
 
     // ── Canvas score display ──────────────────────────────────────────────
 
     _drawScore(flash = null) {
         const ctx = this._ctx;
-        const W = 256, H = 256;
+        const W = 512, H = 256;
         ctx.clearRect(0, 0, W, H);
 
-        // Background
-        const bg = flash === 'hit'    ? 'rgba(100,15,15,0.93)'
-            : flash === 'ok'          ? 'rgba(15,90,35,0.93)'
-            : flash === 'faster'      ? 'rgba(80,50,0,0.93)'
-            :                           'rgba(12,12,22,0.90)';
+        // Flip vertically so the texture appears right-side up on the screnn mesh
+        ctx.save();
+        ctx.translate(0, H);
+        ctx.scale(1, -1);
+
+        // Dark hologram background
+        const bg = flash === 'hit'    ? 'rgba(60,5,5,0.85)'
+            : flash === 'ok'          ? 'rgba(5,40,20,0.85)'
+            : flash === 'faster'      ? 'rgba(40,25,0,0.85)'
+            :                           'rgba(0,8,20,0.82)';
         ctx.fillStyle = bg;
-        this._rrect(ctx, 6, 6, W - 12, H - 12, 18);
+        this._rrect(ctx, 6, 6, W - 12, H - 12, 14);
         ctx.fill();
 
-        // Border
-        ctx.strokeStyle = flash === 'hit'    ? '#ff4444'
-            : flash === 'ok'                 ? '#44ff88'
+        // Border glow
+        ctx.strokeStyle = flash === 'hit'    ? '#ff3333'
+            : flash === 'ok'                 ? '#33ff88'
             : flash === 'faster'             ? '#ffaa00'
-            :                                  '#ffcc00';
-        ctx.lineWidth = 4;
-        this._rrect(ctx, 6, 6, W - 12, H - 12, 18);
+            :                                  '#E7B500';
+        ctx.lineWidth = 3;
+        this._rrect(ctx, 6, 6, W - 12, H - 12, 14);
         ctx.stroke();
 
-        // Title
-        ctx.fillStyle = '#aaaacc';
-        ctx.font = 'bold 21px sans-serif';
+        // Title label
+        ctx.fillStyle = 'rgba(231,181,0,0.55)';
+        ctx.font = 'bold 20px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('CORDE À SAUTER', W / 2, 46);
+        ctx.fillText('SAUTS', W / 2, 40);
 
-        // Separator line
-        ctx.strokeStyle = '#333344';
-        ctx.lineWidth = 2;
+        // Separator
+        ctx.strokeStyle = 'rgba(231,181,0,0.25)';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(20, 58); ctx.lineTo(W - 20, 58);
+        ctx.moveTo(24, 52); ctx.lineTo(W - 24, 52);
         ctx.stroke();
 
-        // Score number
-        ctx.fillStyle = flash === 'hit' ? '#ff6666' : flash === 'faster' ? '#ffaa44' : '#ffee44';
-        const fontSize = this._score > 99 ? 80 : 96;
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.fillText(this._score.toString(), W / 2, 172);
+        // Score number — large yellow digital style
+        const scoreColor = flash === 'hit'    ? '#ff5555'
+            : flash === 'faster'              ? '#ffaa33'
+            :                                   '#E7B500';
+        ctx.fillStyle = scoreColor;
+        const fontSize = this._score > 999 ? 100 : this._score > 99 ? 120 : 148;
+        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.fillText(this._score.toString(), W / 2, 185);
 
-        // Flash message / speed indicator
+        // Flash message
         if (flash === 'hit') {
-            ctx.fillStyle = '#ff8888';
-            ctx.font = 'bold 26px sans-serif';
-            ctx.fillText('RATÉ !', W / 2, 212);
+            ctx.fillStyle = '#ff6666';
+            ctx.font = 'bold 24px monospace';
+            ctx.fillText('RATÉ !', W / 2, 230);
         } else if (flash === 'faster') {
             ctx.fillStyle = '#ffaa44';
-            ctx.font = 'bold 24px sans-serif';
-            ctx.fillText('PLUS VITE ! ⚡', W / 2, 212);
+            ctx.font = 'bold 22px monospace';
+            ctx.fillText('PLUS VITE !  ⚡', W / 2, 230);
         } else if (flash === 'ok') {
-            ctx.fillStyle = '#88ffaa';
-            ctx.font = 'bold 26px sans-serif';
-            ctx.fillText('SUPER !', W / 2, 212);
+            ctx.fillStyle = '#44ffaa';
+            ctx.font = 'bold 24px monospace';
+            ctx.fillText('SUPER !', W / 2, 230);
         } else {
-            ctx.fillStyle = '#666677';
-            ctx.font = '19px sans-serif';
-            // Show current speed tier when idle
+            ctx.fillStyle = 'rgba(231,181,0,0.40)';
+            ctx.font = '18px monospace';
             const tier = Math.floor((this._ropeSpeed - ROPE_SPEED_BASE) / ROPE_SPEED_STEP);
-            const label = tier > 0 ? `vitesse x${tier + 1}` : 'sauts consécutifs';
-            ctx.fillText(label, W / 2, 218);
+            const label = tier > 0 ? `vitesse  x${tier + 1}` : 'sauts consécutifs';
+            ctx.fillText(label, W / 2, 232);
         }
 
+        ctx.restore();
         this._scoreTex.needsUpdate = true;
     }
 
@@ -313,8 +386,21 @@ export class JumpRope {
         this._scene.remove(this._ropeMesh);
         this._ropeMesh.geometry?.dispose();
         this._ropeMesh.material?.dispose();
-        this._scene.remove(this._scoreSprite);
-        this._scoreSprite.material?.map?.dispose();
-        this._scoreSprite.material?.dispose();
+
+        // Portal model
+        if (this._portalRoot) {
+            this._scene.remove(this._portalRoot);
+            this._portalRoot.traverse((child) => {
+                if (child.isMesh) {
+                    child.geometry?.dispose();
+                    if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                    else child.material?.dispose();
+                }
+            });
+            this._portalRoot = null;
+        }
+
+        // Canvas texture
+        this._scoreTex?.dispose();
     }
 }
