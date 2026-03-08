@@ -149,8 +149,8 @@ export class StartPlane {
                                     });
                                 });
                             } else {
-                                const baseColor = color(0x00ffff);
-                                const glowColor = color(0x88ffff);
+                                const baseColor = color(0xffcc00); // Yellow/Gold
+                                const glowColor = color(0xffff00); // Bright Yellow
                                 const pulse = mix(
                                     float(0.5),
                                     float(1.5),

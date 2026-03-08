@@ -1,19 +1,31 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { MeshBasicNodeMaterial } from 'three/webgpu';
+import { uniform, normalLocal, positionLocal } from 'three/tsl';
 
 export class Lamp {
     /**
      * @param {THREE.Scene} scene
      * @param {number} maxInstances
+     * @param {any} RAPIER
+     * @param {any} world
      */
-    constructor(scene, maxInstances = 200) {
+    constructor(scene, maxInstances = 200, RAPIER = null, world = null) {
         this._scene = scene;
         this._maxInstances = maxInstances;
-        this._instances = []; // Array of { matrix, pos }
+        this._RAPIER = RAPIER;
+        this._world = world;
+        this._instances = []; // Array of { matrix, pos, rigidBody }
 
         this._modelLoaded = false;
         this._instancedMeshes = []; // Array of { instancedMesh, originalMesh }
+        this._outlineInstancedMeshes = []; // Inverted hull outline InstancedMeshes
+
+        // Outline uniforms
+        this._outlineColorUniform = uniform(new THREE.Color(0x000000));
+        this._outlineThicknessUniform = uniform(0.092);
+        this._outlineEnabled = true;
 
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -30,6 +42,7 @@ export class Lamp {
                 gltf.scene.traverse(node => {
                     if (node.isMesh) {
                         const im = new THREE.InstancedMesh(node.geometry, node.material, maxInstances);
+                        im.frustumCulled = false;
                         im.castShadow = false;
                         im.receiveShadow = false;
                         im.count = 0;
@@ -39,13 +52,29 @@ export class Lamp {
                         if (node.name === 'Plane_2') {
                             im.material = node.material.clone();
                             im.material.emissive = new THREE.Color(0xd1d100);
-                            im.material.emissiveIntensity = 5.0;
+                            im.material.emissiveIntensity = 50.0;
                         }
 
                         this._instancedMeshes.push({ instancedMesh: im, originalMesh: node });
                         this._scene.add(im);
                     }
                 });
+
+                // ── Inverted hull outline ──────────────────────────────────
+                const outlineMat = new MeshBasicNodeMaterial({ side: THREE.BackSide });
+                outlineMat.colorNode = this._outlineColorUniform;
+                outlineMat.positionNode = positionLocal.add(
+                    normalLocal.normalize().mul(this._outlineThicknessUniform)
+                );
+
+                for (const { instancedMesh } of this._instancedMeshes) {
+                    const oim = new THREE.InstancedMesh(instancedMesh.geometry, outlineMat, maxInstances);
+                    oim.frustumCulled = false;
+                    oim.count = 0;
+                    oim.visible = this._outlineEnabled;
+                    this._outlineInstancedMeshes.push(oim);
+                    this._scene.add(oim);
+                }
 
                 this._modelLoaded = true;
                 this.addInstance(new THREE.Vector3(-15, -3, 5), 2);
@@ -74,15 +103,35 @@ export class Lamp {
         dummy.quaternion.copy(alignQuat);
         dummy.updateMatrix();
 
+        // Physics
+        let rigidBody = null;
+        if (this._RAPIER && this._world) {
+            const rbDesc = this._RAPIER.RigidBodyDesc.fixed()
+                .setTranslation(position.x, position.y, position.z)
+                .setRotation({ x: alignQuat.x, y: alignQuat.y, z: alignQuat.z, w: alignQuat.w });
+            rigidBody = this._world.createRigidBody(rbDesc);
+
+            // Simple cylinder/cuboid collider for the lamp pole
+            // height is roughly 4 * scale, radius 0.2 * scale
+            const colDesc = this._RAPIER.ColliderDesc.cylinder(2 * scale, 0.2 * scale);
+            this._world.createCollider(colDesc, rigidBody);
+        }
+
         // Track instance
         const index = this._instances.length;
-        this._instances.push({ matrix: dummy.matrix.clone(), pos: position.clone(), scale });
+        this._instances.push({ matrix: dummy.matrix.clone(), pos: position.clone(), scale, rigidBody });
 
         // Update InstancedMeshes
         for (const { instancedMesh } of this._instancedMeshes) {
             instancedMesh.setMatrixAt(index, dummy.matrix);
             instancedMesh.count = this._instances.length;
             instancedMesh.instanceMatrix.needsUpdate = true;
+        }
+        // Sync outline InstancedMeshes
+        for (const oim of this._outlineInstancedMeshes) {
+            oim.setMatrixAt(index, dummy.matrix);
+            oim.count = this._instances.length;
+            oim.instanceMatrix.needsUpdate = true;
         }
     }
 
@@ -109,11 +158,33 @@ export class Lamp {
     }
 
     clearAll() {
+        for (const inst of this._instances) {
+            if (inst.rigidBody && this._world) {
+                this._world.removeRigidBody(inst.rigidBody);
+            }
+        }
         this._instances = [];
         for (const { instancedMesh } of this._instancedMeshes) {
             instancedMesh.count = 0;
             instancedMesh.instanceMatrix.needsUpdate = true;
         }
+        for (const oim of this._outlineInstancedMeshes) {
+            oim.count = 0;
+            oim.instanceMatrix.needsUpdate = true;
+        }
+    }
+
+    setOutlineEnabled(v) {
+        this._outlineEnabled = v;
+        for (const oim of this._outlineInstancedMeshes) oim.visible = v;
+    }
+
+    setOutlineColor(hexString) {
+        this._outlineColorUniform.value.set(hexString);
+    }
+
+    setOutlineThickness(v) {
+        this._outlineThicknessUniform.value = v;
     }
 
     updateLights(intensity, distance, color, emissiveIntensity) {
@@ -137,5 +208,10 @@ export class Lamp {
             if (instancedMesh.material.dispose) instancedMesh.material.dispose();
         }
         this._instancedMeshes = [];
+        for (const oim of this._outlineInstancedMeshes) {
+            this._scene.remove(oim);
+            oim.material?.dispose();
+        }
+        this._outlineInstancedMeshes = [];
     }
 }

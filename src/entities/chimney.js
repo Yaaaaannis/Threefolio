@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
-import { color, float } from 'three/tsl';
+import { MeshStandardNodeMaterial, MeshBasicNodeMaterial } from 'three/webgpu';
+import { color, float, uniform, normalLocal, positionLocal } from 'three/tsl';
 
 export class Chimney {
     /**
@@ -16,6 +16,13 @@ export class Chimney {
         this._rigidBody = null;
         this._rapierWorld = rapierWorld;
         this._time = 0;
+
+        // Outline (inverted hull, TSL)
+        this._outlineMeshes = [];
+        this._outlineColorUniform = uniform(new THREE.Color(0x000000));
+        this._outlineThicknessUniform = uniform(0.077);
+        this._outlineEnabled = true;
+        this._outlineMat = null;
 
         // Smoke setup
         this._particles = null;
@@ -107,6 +114,24 @@ export class Chimney {
                         }
                     }
                 });
+                // ── Inverted hull outline (TSL, WebGPU-compatible) ────────
+                this._outlineMat = new MeshBasicNodeMaterial({ side: THREE.BackSide });
+                this._outlineMat.colorNode = this._outlineColorUniform;
+                this._outlineMat.positionNode = positionLocal.add(
+                    normalLocal.normalize().mul(this._outlineThicknessUniform)
+                );
+
+                // Collect meshes first, then add outline children — avoids
+                // traverse visiting the newly added outline meshes and causing
+                // infinite recursion (stack overflow).
+                const meshNodes = [];
+                this._root.traverse(node => { if (node.isMesh) meshNodes.push(node); });
+                for (const node of meshNodes) {
+                    const om = new THREE.Mesh(node.geometry, this._outlineMat);
+                    om.visible = this._outlineEnabled;
+                    node.add(om);
+                    this._outlineMeshes.push(om);
+                }
             },
             undefined,
             (err) => console.error('[Model ERROR] chemine_blend.glb', err)
@@ -216,6 +241,19 @@ export class Chimney {
         this._glowLight.position.copy(this._spawnPos)
             .addScaledVector(this._surfaceNormal, 0.3);
         scene.add(this._glowLight);
+    }
+
+    setOutlineEnabled(v) {
+        this._outlineEnabled = v;
+        for (const m of this._outlineMeshes) m.visible = v;
+    }
+
+    setOutlineColor(hexString) {
+        this._outlineColorUniform.value.set(hexString);
+    }
+
+    setOutlineThickness(v) {
+        this._outlineThicknessUniform.value = v;
     }
 
     _respawnPuff(i) {

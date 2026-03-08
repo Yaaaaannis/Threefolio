@@ -120,7 +120,7 @@ export class HubWorld extends BaseWorld {
         const tangent = new THREE.Vector3(0, 0, -1);
         tangent.sub(socialNormal.clone().multiplyScalar(tangent.dot(socialNormal))).normalize();
         const socialPos = antennaWorldPos.clone().addScaledVector(tangent, 3.5).addScaledVector(socialNormal, 0.05);
-        this._socialZone = new SocialZone(scene, socialPos);
+        this._socialZone = new SocialZone(scene, socialPos, null, RAPIER, rapierWorld);
 
 
         // ── Start Plane ── near spawn ──────────────────────────────────────

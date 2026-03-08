@@ -71,6 +71,9 @@ export class SceneSetup {
 
         /** @type {import('../entities/lamp.js').Lamp | null} */
         this.lamp = null;
+
+        /** @type {import('../entities/chimney.js').Chimney | null} */
+        this.chimney = null;
     }
 
     _setupLights() {

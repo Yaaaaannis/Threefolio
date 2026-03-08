@@ -13,7 +13,7 @@ export class ChessZone {
         // Visuals: Glowing circle on the ground
         const ringGeo = new THREE.RingGeometry(this.radius - 0.2, this.radius, 32);
         this.ringMat = new THREE.MeshStandardMaterial({
-            color: 0x8a2be2, // Purple default
+            color: 0xffcc00, // Gold default
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.8,
@@ -46,10 +46,10 @@ export class ChessZone {
         this.isPlayerInside = distance <= this.radius;
 
         if (this.isPlayerInside) {
-            this.ringMat.color.setHex(0xff00ff); // Bright magenta when inside
-            this.ringMat.emissive.setHex(0x550055);
+            this.ringMat.color.setHex(0xffff00); // Bright yellow when inside
+            this.ringMat.emissive.setHex(0x555500);
         } else {
-            this.ringMat.color.setHex(0x8a2be2); // Dim purple
+            this.ringMat.color.setHex(0xffcc00); // Gold
             this.ringMat.emissive.setHex(0x000000);
         }
 

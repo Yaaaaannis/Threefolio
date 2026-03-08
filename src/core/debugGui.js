@@ -3,6 +3,7 @@
 
 import GUI from 'lil-gui';
 import * as THREE from 'three';
+import { positionWorld, positionView, color, exp, mul, negate, float, mix, fog } from 'three/tsl';
 
 export class DebugGui {
     /**
@@ -31,6 +32,7 @@ export class DebugGui {
             fogEnabled: false,
             fogColor: '#c8d8f0',
             fogDensity: 0.018,
+            fogHeightFalloff: 0.05, // How fast fog disappears with height
 
             // Ambient light
             ambientIntensity: sceneSetup.ambientLight?.intensity ?? 0.7,
@@ -39,7 +41,17 @@ export class DebugGui {
             lampColor: '#d1d100',
             lampSpawnCount: 10,
             lampSpawnRange: 30,
-            lampEmissiveIntensity: 38.5,
+            lampEmissiveIntensity: 50.0,
+
+            // Chimney outline
+            chimneyOutlineEnabled: true,
+            chimneyOutlineColor: '#000000',
+            chimneyOutlineThickness: 0.077,
+
+            // Lamp outline
+            lampOutlineEnabled: true,
+            lampOutlineColor: '#000000',
+            lampOutlineThickness: 0.092,
         };
 
         this._buildBloomFolder();
@@ -47,6 +59,8 @@ export class DebugGui {
         this._buildFogFolder();
         this._buildLightsFolder();
         this._buildLampFolder();
+        this._buildChimneyOutlineFolder();
+        this._buildLampOutlineFolder();
     }
 
     // ── Bloom ──────────────────────────────────────────────────────────────
@@ -99,27 +113,41 @@ export class DebugGui {
         const f = this._gui.addFolder('🌫 Fog');
 
         f.add(this._state, 'fogEnabled').name('Enabled').onChange(v => {
-            if (!v) {
-                this._sceneSetup.scene.fog = null;
-            } else {
-                this._sceneSetup.scene.fog = new THREE.FogExp2(
-                    new THREE.Color(this._state.fogColor).getHex(),
-                    this._state.fogDensity
-                );
-            }
+            this._updateFog();
         });
 
         f.addColor(this._state, 'fogColor').name('Color').onChange(v => {
-            if (this._sceneSetup.scene.fog) {
-                this._sceneSetup.scene.fog.color.set(v);
-            }
+            this._updateFog();
         });
 
         f.add(this._state, 'fogDensity', 0, 0.2, 0.001).name('Density').onChange(v => {
-            if (this._sceneSetup.scene.fog) {
-                this._sceneSetup.scene.fog.density = v;
-            }
+            this._updateFog();
         });
+
+        f.add(this._state, 'fogHeightFalloff', 0, 0.5, 0.001).name('Height Falloff').onChange(v => {
+            this._updateFog();
+        });
+    }
+
+    _updateFog() {
+        const scene = this._sceneSetup.scene;
+        if (!this._state.fogEnabled) {
+            scene.fog = null;
+            scene.fogNode = null;
+        } else {
+            // We use TSL to create a fog that depends on height
+            // Density decreases exponentially as we go up (Y axis)
+            const fogCol = color(this._state.fogColor);
+            const baseDensity = float(this._state.fogDensity);
+            const falloff = float(this._state.fogHeightFalloff);
+
+            // Height relative to planet surface roughly
+            // Planet surface is at y=0 near origin
+            const h = positionWorld.y;
+            const densityNode = baseDensity.mul(h.mul(falloff).negate().exp());
+
+            scene.fogNode = fog(fogCol, densityNode);
+        }
     }
 
     // ── Lights ────────────────────────────────────────────────────────────
@@ -190,6 +218,42 @@ export class DebugGui {
 
         f.add(spawnObj, 'spawn').name('🚀 Spawn Random');
         f.add(spawnObj, 'clear').name('🗑 Clear All');
+    }
+
+    // ── Chimney Outline ───────────────────────────────────────────────────
+
+    _buildChimneyOutlineFolder() {
+        const f = this._gui.addFolder('🔲 Chimney Outline');
+
+        f.add(this._state, 'chimneyOutlineEnabled').name('Enabled').onChange(v => {
+            this._sceneSetup.chimney?.setOutlineEnabled(v);
+        });
+
+        f.addColor(this._state, 'chimneyOutlineColor').name('Color').onChange(v => {
+            this._sceneSetup.chimney?.setOutlineColor(v);
+        });
+
+        f.add(this._state, 'chimneyOutlineThickness', 0.001, 2.0, 0.001).name('Thickness').onChange(v => {
+            this._sceneSetup.chimney?.setOutlineThickness(v);
+        });
+    }
+
+    // ── Lamp Outline ──────────────────────────────────────────────────────
+
+    _buildLampOutlineFolder() {
+        const f = this._gui.addFolder('🔲 Lamp Outline');
+
+        f.add(this._state, 'lampOutlineEnabled').name('Enabled').onChange(v => {
+            this._sceneSetup.lamp?.setOutlineEnabled(v);
+        });
+
+        f.addColor(this._state, 'lampOutlineColor').name('Color').onChange(v => {
+            this._sceneSetup.lamp?.setOutlineColor(v);
+        });
+
+        f.add(this._state, 'lampOutlineThickness', 0.001, 2.0, 0.001).name('Thickness').onChange(v => {
+            this._sceneSetup.lamp?.setOutlineThickness(v);
+        });
     }
 
     dispose() {

@@ -13,6 +13,8 @@ import { FollowerSphere } from '../../entities/followerSphere.js';
 import { StartPlane } from '../../entities/startPlane.js';
 import { Chimney } from '../../entities/chimney.js';
 import { Lamp } from '../../entities/lamp.js';
+import { SocialZone } from '../socialZone.js';
+
 
 const PC = new THREE.Vector3(0, -50, 0);
 const PR = 50;
@@ -88,10 +90,18 @@ export class HubTheme extends BaseTheme {
         // ── Lamp ───────────────────────────────────────────────────────────
         this._lamp = new Lamp(
             scene,
-            20 // Max instances
+            20, // Max instances
+            RAPIER,
+            rapierWorld
         );
         if (sceneSetup) sceneSetup.lamp = this._lamp;
+        if (sceneSetup) sceneSetup.chimney = this._chimney;
+
+        // ── Social Media Zone ─────────────────────────────────────────────
+        const socialPos = new THREE.Vector3(-10, -4, -20);
+        this._socialZone = new SocialZone(scene, socialPos, null, RAPIER, rapierWorld);
     }
+
 
 
     update(dt, playerPos, time, chatPositions = []) {
@@ -161,6 +171,7 @@ export class HubTheme extends BaseTheme {
         this._startPlane?.dispose();
         this._chimney?.dispose();
         if (this.sceneSetup) this.sceneSetup.lamp = null;
+        if (this.sceneSetup) this.sceneSetup.chimney = null;
         this._lamp?.dispose();
         super.dispose();
     }

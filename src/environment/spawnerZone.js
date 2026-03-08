@@ -19,7 +19,7 @@ export class SpawnerZone {
         // Visuals: Glowing circle on the ground
         const ringGeo = new THREE.RingGeometry(this.radius - 0.2, this.radius, 32);
         this.ringMat = new THREE.MeshStandardMaterial({
-            color: 0x444444,
+            color: 0xffcc00,
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.8,
@@ -109,7 +109,8 @@ export class SpawnerZone {
         // Visual feedback
         if (this.isPlayerInside) {
             this.ringMat.color.setHex(0xffff44); // Glow yellow
-            this.ringMat.emissive = new THREE.Color(0xffff44);
+            this.ringMat.color.setHex(0xffff00); // Bright Yellow
+            this.ringMat.emissive = new THREE.Color(0x555500);
 
             // Handle spawn event
             if (this.pressedEnter && !this._enterConsumed) {
@@ -119,7 +120,7 @@ export class SpawnerZone {
                 this._enterConsumed = false; // Reset when key is released
             }
         } else {
-            this.ringMat.color.setHex(0x444444); // Dark grey
+            this.ringMat.color.setHex(0xffcc00); // Gold
             this.ringMat.emissive = new THREE.Color(0x000000);
             this._enterConsumed = false; // Also reset outside
         }
