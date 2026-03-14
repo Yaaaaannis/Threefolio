@@ -39,10 +39,10 @@ export class Player {
         this.animations = {};
         this.currentAction = null;
 
-        loader.load('/models/soldierdraco.glb', (gltf) => {
-            console.log('[Model loaded] soldierdraco.glb');
+        loader.load('/models/yannis.glb', (gltf) => {
+            console.log('[Model loaded] yannis.glb');
             const model = gltf.scene;
-            model.scale.set(1.2, 1.2, 1.2);
+            model.scale.set(0.2, 0.2, 0.2);
             model.position.y = -0.4; // Align with ball bottom
 
             // Shadows
@@ -57,13 +57,13 @@ export class Player {
 
             // Mixer & Animations
             this.mixer = new THREE.AnimationMixer(model);
-            console.log('Soldier animations:', gltf.animations.map(a => a.name));
+            console.log('Yannis animations:', gltf.animations.map(a => a.name));
             gltf.animations.forEach(clip => {
                 this.animations[clip.name] = this.mixer.clipAction(clip);
             });
 
             // Set initial state
-            const mainClip = this.animations['Armature|mixamo.com|Layer0'];
+            const mainClip = this.animations['mixamo.com'];
             if (mainClip) {
                 this.currentAction = mainClip;
                 this.currentAction.play();
@@ -294,7 +294,7 @@ export class Player {
         if (this.mixer) {
             this.mixer.update(dt);
 
-            const mainClip = this.animations['Armature|mixamo.com|Layer0'];
+            const mainClip = this.animations['mixamo.com'];
             if (mainClip) {
                 // If the model has only one clip (like a Run/Idle blend or just one action)
                 // we scale the timeScale based on whether we are moving

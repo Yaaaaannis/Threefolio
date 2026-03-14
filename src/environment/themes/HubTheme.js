@@ -15,6 +15,7 @@ import { Chimney } from '../../entities/chimney.js';
 import { Lamp } from '../../entities/lamp.js';
 import { SocialZone } from '../socialZone.js';
 import { Trampoline } from '../../entities/trampoline.js';
+import { Cassette } from '../../entities/cassette.js';
 import { JumpRope } from '../../entities/jumpRope.js';
 
 
@@ -38,7 +39,8 @@ export class HubTheme extends BaseTheme {
         this._chimney = null;
         this._lamp = null;
         this._trampoline = null;
-        this._jumpRope   = null;
+        this._cassette = null;
+        this._jumpRope = null;
     }
 
     get spawnPoint() { return new THREE.Vector3(0, 1.5, 0); }
@@ -110,8 +112,27 @@ export class HubTheme extends BaseTheme {
             rapierWorld
         );
 
-        // ── Jump Rope ─────────────────────────────────────────────────────
-        this._jumpRope = new JumpRope(scene, new THREE.Vector3(5, 1, 12));
+        // ── Cassette ──────────────────────────────────────────────────────
+        const CASSETTE_SCALE = 0.8;            // Change size
+        const CASSETTE_ELEVATION = 3;            // Height from floor
+        const CASSETTE_ROTATION = Math.PI * 0.5; // Twist angle
+
+        this._cassette = new Cassette(
+            scene,
+            new THREE.Vector3(-2, 10, 18),
+            CASSETTE_SCALE,
+            CASSETTE_ELEVATION,
+            CASSETTE_ROTATION
+        );
+        window.cassette = this._cassette; // Type window.cassette.setNutHeight(y) in console!
+
+        // ── JumpRope ──────────────────────────────────────────────────────
+        // Placed in front of the cassette (offset along Z/X)
+        this._jumpRope = new JumpRope(scene, new THREE.Vector3(6, 2, 14), {
+            onJumpSuccess: () => {
+                this._cassette?.triggerSuccessGlimmer();
+            }
+        });
 
         // ── Social Media Zone ─────────────────────────────────────────────
         const socialPos = new THREE.Vector3(-10, -4, -20);
@@ -143,6 +164,7 @@ export class HubTheme extends BaseTheme {
             this._startPlane?.update(dt ?? 0.016, playerPos);
             this._chimney?.update(dt ?? 0.016);
             this._trampoline?.update(dt ?? 0.016, player);
+            this._cassette?.update(dt ?? 0.016);
             this._jumpRope?.update(dt ?? 0.016, player);
         }
     }
@@ -192,6 +214,7 @@ export class HubTheme extends BaseTheme {
         if (this.sceneSetup) this.sceneSetup.chimney = null;
         this._lamp?.dispose();
         this._trampoline?.dispose();
+        this._cassette?.dispose();
         this._jumpRope?.dispose();
         super.dispose();
     }
