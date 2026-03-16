@@ -8,6 +8,19 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+// ─────────────────────────────────────────────────────────────────────────────
+// Cartoon materials
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Body: warm dark-brown cartoon wood/leather feel
+const BODY_MATERIAL = new THREE.MeshToonMaterial({
+    color: 0x5C2E0E,   // rich dark brown
+});
+
+// Antenna: dark graphite with a slight cold tint — contrasts the warm body
+const ANTENNA_MATERIAL = new THREE.MeshToonMaterial({
+    color: 0x2A2A35,   // dark blue-grey steel
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -116,13 +129,14 @@ export class Cassette {
                     this._tubes.push(child);
                 }
 
-                // Antenna & Body → Matte Black
-                if (n.toLowerCase().includes('antenne') || mName === 'Material.003') {
-                    child.material = new THREE.MeshStandardMaterial({
-                        color: 0x050505,
-                        roughness: 1.0,
-                        metalness: 0.0,
-                    });
+                // Body → warm dark brown cartoon
+                if (mName === 'Material.003') {
+                    child.material = BODY_MATERIAL;
+                }
+
+                // Antenna → dark graphite cartoon (distinct from body)
+                if (n.toLowerCase().includes('antenne')) {
+                    child.material = ANTENNA_MATERIAL;
                 }
 
                 // Gears (1 - 5)

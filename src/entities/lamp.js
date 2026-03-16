@@ -26,6 +26,7 @@ export class Lamp {
         this._outlineColorUniform = uniform(new THREE.Color(0x000000));
         this._outlineThicknessUniform = uniform(0.092);
         this._outlineEnabled = true;
+        this._nightEmissiveIntensity = 50.0; // max emissive in full night
 
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
@@ -52,7 +53,9 @@ export class Lamp {
                         if (node.name === 'Plane_2') {
                             im.material = node.material.clone();
                             im.material.emissive = new THREE.Color(0xd1d100);
-                            im.material.emissiveIntensity = 50.0;
+                            im.material.emissiveIntensity = 0; // driven by setTimeOfDay()
+                            im.material.transparent = true;
+                            im.material.opacity = 0;           // hidden in day by default
                         }
 
                         this._instancedMeshes.push({ instancedMesh: im, originalMesh: node });
@@ -187,13 +190,29 @@ export class Lamp {
         this._outlineThicknessUniform.value = v;
     }
 
+    /**
+     * Drive lamp emission from the scene day/night cycle.
+     * t = 1.0 → full day  (no emission)
+     * t = 0.0 → full night (full emission)
+     */
+    setTimeOfDay(t) {
+        const night = 1 - t; // 0 = day, 1 = night
+        for (const { instancedMesh } of this._instancedMeshes) {
+            if (instancedMesh.name === 'Plane_2' && instancedMesh.material) {
+                instancedMesh.material.emissiveIntensity = night * this._nightEmissiveIntensity;
+                instancedMesh.material.opacity = night;
+            }
+        }
+    }
+
     updateLights(intensity, distance, color, emissiveIntensity) {
+        if (emissiveIntensity !== undefined) this._nightEmissiveIntensity = emissiveIntensity;
         if (emissiveIntensity !== undefined || color !== undefined) {
             for (const { instancedMesh } of this._instancedMeshes) {
                 if (instancedMesh.name === 'Plane_2') {
                     if (instancedMesh.material) {
-                        if (emissiveIntensity !== undefined) instancedMesh.material.emissiveIntensity = emissiveIntensity;
                         if (color !== undefined) instancedMesh.material.emissive.set(color);
+                        // emissiveIntensity is driven by setTimeOfDay — don't set directly here
                     }
                 }
             }

@@ -117,8 +117,8 @@ export class SceneSetup {
         this.fillLight.position.set(-5, 3, -8);
         this.scene.add(this.fillLight);
 
-        // Point light above player (moves with player)
-        this.playerLight = new THREE.PointLight(0xffedcc, 1.2, 12);
+        // Point light above player (moves with player — off in day, on at night)
+        this.playerLight = new THREE.PointLight(0xffedcc, 0, 12);
         this.playerLight.position.set(0, 4, 0);
         this.scene.add(this.playerLight);
 
@@ -195,6 +195,10 @@ export class SceneSetup {
 
         // Light follows target
         this.playerLight.position.set(targetPos.x, targetPos.y + 3.5, targetPos.z);
+
+        // Lamp + player light: off in day, on at night
+        this.lamp?.setTimeOfDay(this.timeOfDay);
+        this.playerLight.intensity = (1 - this.timeOfDay) * 1.2;
 
         // Lerp Day/Night
         if (Math.abs(this.targetTimeOfDay - this.timeOfDay) > 0.001) {
