@@ -1,10 +1,9 @@
 // scene.js — Three.js scene setup, isometric camera, lighting
 
 import * as THREE from 'three';
-import { WebGPURenderer, PostProcessing } from 'three/webgpu';
-import { pass } from 'three/tsl';
+import { WebGPURenderer, PostProcessing, MeshBasicNodeMaterial } from 'three/webgpu';
+import { pass, uniform, positionLocal, vec3, mix, smoothstep } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
-import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 
 const ISO_ANGLE = Math.PI / 4;      // 45° tilt from horizontal
 const CAM_DISTANCE = 18;
@@ -22,19 +21,10 @@ export class SceneSetup {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 0.35;
+        this.renderer.toneMappingExposure = 1.1;
 
         // Scene
         this.scene = new THREE.Scene();
-
-        // HDRI Environment
-        new HDRLoader()
-            .setPath('/textures/')
-            .load('qwantani_moonrise_puresky_1k.hdr', (texture) => {
-                texture.mapping = THREE.EquirectangularReflectionMapping;
-                this.scene.background = texture;
-                this.scene.environment = texture;
-            });
 
         // Camera — top-biased isometric perspective
         this.camera = new THREE.PerspectiveCamera(
@@ -56,6 +46,9 @@ export class SceneSetup {
         // Lights
         this._setupLights();
 
+        // Procedural sky (no HDRI file needed)
+        this._buildSky();
+
         // Resize
         window.addEventListener('resize', () => this._onResize());
 
@@ -74,6 +67,30 @@ export class SceneSetup {
 
         /** @type {import('../entities/chimney.js').Chimney | null} */
         this.chimney = null;
+    }
+
+    _buildSky() {
+        // Gradient sky sphere — BackSide so camera sees it from inside
+        this._uSkyDay     = uniform(1.0);
+
+        // Day & night colors — all uniforms so the GUI can tweak them live
+        this._uDayZenith    = uniform(new THREE.Color('#ccd4db'));
+        this._uDayHorizon   = uniform(new THREE.Color('#1d6490'));
+        this._uNightZenith  = uniform(new THREE.Color('#0d1a3d'));
+        this._uNightHorizon = uniform(new THREE.Color('#1a3d6e'));
+        this._uSkyGradient  = uniform(0.27);
+
+        const t      = positionLocal.normalize().y.mul(0.5).add(0.5); // 0=bottom, 1=top
+        const zenith  = mix(this._uNightZenith,  this._uDayZenith,  this._uSkyDay);
+        const horizon = mix(this._uNightHorizon, this._uDayHorizon, this._uSkyDay);
+
+        const mat = new MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false });
+        mat.colorNode = mix(horizon, zenith, smoothstep(this._uSkyGradient, 1.0, t));
+
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(160, 32, 24), mat);
+        mesh.renderOrder = -1;
+        mesh.frustumCulled = false;
+        this.scene.add(mesh);
     }
 
     _setupLights() {
@@ -192,6 +209,7 @@ export class SceneSetup {
             this.fillLight.intensity = THREE.MathUtils.lerp(this.nightColors.fillInt, this.dayColors.fillInt, this.timeOfDay);
 
             this.renderer.toneMappingExposure = THREE.MathUtils.lerp(this.nightColors.exposure, this.dayColors.exposure, this.timeOfDay);
+            this._uSkyDay.value = this.timeOfDay;
         }
     }
 

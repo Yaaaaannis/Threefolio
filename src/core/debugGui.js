@@ -53,6 +53,14 @@ export class DebugGui {
             lampOutlineColor: '#000000',
             lampOutlineThickness: 0.092,
 
+            // Sky
+            skyIsDay:       true,
+            skyZenith:      '#ccd4db',
+            skyHorizon:     '#1d6490',
+            skyGradient:    0.27,
+            skyNightZenith: '#0d1a3d',
+            skyNightHorizon:'#1a3d6e',
+
             // Clouds
             cloudNoiseScale: 2.4,
             cloudHeight:     20.0,
@@ -64,6 +72,7 @@ export class DebugGui {
 
         this._buildBloomFolder();
         this._buildRenderFolder();
+        this._buildSkyFolder();
         this._buildFogFolder();
         this._buildLightsFolder();
         this._buildLampFolder();
@@ -113,6 +122,42 @@ export class DebugGui {
 
         f.add(this._state, 'exposure', 0, 4, 0.05).name('Exposure').onChange(v => {
             this._sceneSetup.renderer.toneMappingExposure = v;
+        });
+    }
+
+    // ── Sky ───────────────────────────────────────────────────────────────
+
+    _buildSkyFolder() {
+        const f  = this._gui.addFolder('🌤 Sky');
+        const sc = this._sceneSetup;
+
+        // ── Toggle ──
+        const toggle = { fn: () => {
+            this._state.skyIsDay = !this._state.skyIsDay;
+            sc.setTimeOfDay(this._state.skyIsDay ? 1 : 0);
+            btn.name(this._state.skyIsDay ? '🌙 Switch to Night' : '☀️ Switch to Day');
+        }};
+        const btn = f.add(toggle, 'fn').name('🌙 Switch to Night');
+
+        // ── Day ──
+        const dayFolder = f.addFolder('☀️ Day');
+        dayFolder.addColor(this._state, 'skyZenith').name('Zenith').onChange(v => {
+            sc._uDayZenith?.value.set(v);
+        });
+        dayFolder.addColor(this._state, 'skyHorizon').name('Horizon').onChange(v => {
+            sc._uDayHorizon?.value.set(v);
+        });
+        dayFolder.add(this._state, 'skyGradient', 0.0, 0.99, 0.01).name('Gradient').onChange(v => {
+            if (sc._uSkyGradient) sc._uSkyGradient.value = v;
+        });
+
+        // ── Night ──
+        const nightFolder = f.addFolder('🌙 Night');
+        nightFolder.addColor(this._state, 'skyNightZenith').name('Zenith').onChange(v => {
+            sc._uNightZenith?.value.set(v);
+        });
+        nightFolder.addColor(this._state, 'skyNightHorizon').name('Horizon').onChange(v => {
+            sc._uNightHorizon?.value.set(v);
         });
     }
 
