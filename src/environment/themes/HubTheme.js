@@ -17,6 +17,7 @@ import { SocialZone } from '../socialZone.js';
 import { Trampoline } from '../../entities/trampoline.js';
 import { Cassette } from '../../entities/cassette.js';
 import { JumpRope } from '../../entities/jumpRope.js';
+import { CloudLayer } from '../cloudLayer.js';
 
 
 const PC = new THREE.Vector3(0, -50, 0);
@@ -41,6 +42,7 @@ export class HubTheme extends BaseTheme {
         this._trampoline = null;
         this._cassette = null;
         this._jumpRope = null;
+        this._cloudLayer = null;
     }
 
     get spawnPoint() { return new THREE.Vector3(0, 1.5, 0); }
@@ -137,6 +139,10 @@ export class HubTheme extends BaseTheme {
         // ── Social Media Zone ─────────────────────────────────────────────
         const socialPos = new THREE.Vector3(-10, -4, -20);
         this._socialZone = new SocialZone(scene, socialPos, null, RAPIER, rapierWorld);
+
+        // ── Cloud Layer ───────────────────────────────────────────────────
+        this._cloudLayer = new CloudLayer(scene);
+        if (sceneSetup) sceneSetup.clouds = this._cloudLayer;
     }
 
 
@@ -167,6 +173,7 @@ export class HubTheme extends BaseTheme {
             this._cassette?.update(dt ?? 0.016);
             this._jumpRope?.update(dt ?? 0.016, player);
         }
+        this._cloudLayer?.update(time ?? 0);
     }
 
     dispose() {
@@ -216,6 +223,8 @@ export class HubTheme extends BaseTheme {
         this._trampoline?.dispose();
         this._cassette?.dispose();
         this._jumpRope?.dispose();
+        this._cloudLayer?.dispose();
+        if (this.sceneSetup) this.sceneSetup.clouds = null;
         super.dispose();
     }
 

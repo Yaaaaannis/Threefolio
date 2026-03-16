@@ -52,6 +52,14 @@ export class DebugGui {
             lampOutlineEnabled: true,
             lampOutlineColor: '#000000',
             lampOutlineThickness: 0.092,
+
+            // Clouds
+            cloudNoiseScale: 2.4,
+            cloudHeight:     20.0,
+            cloudThreshold:  0.52,
+            cloudSpeed:      0.035,
+            cloudOpacity:    0.93,
+            cloudVolume:     1.8,
         };
 
         this._buildBloomFolder();
@@ -61,6 +69,7 @@ export class DebugGui {
         this._buildLampFolder();
         this._buildChimneyOutlineFolder();
         this._buildLampOutlineFolder();
+        this._buildCloudFolder();
     }
 
     // ── Bloom ──────────────────────────────────────────────────────────────
@@ -254,6 +263,39 @@ export class DebugGui {
         f.add(this._state, 'lampOutlineThickness', 0.001, 2.0, 0.001).name('Thickness').onChange(v => {
             this._sceneSetup.lamp?.setOutlineThickness(v);
         });
+    }
+
+    // ── Clouds ────────────────────────────────────────────────────────────
+
+    _buildCloudFolder() {
+        const f = this._gui.addFolder('☁️ Clouds');
+        f.open();
+
+        const clouds = () => this._sceneSetup.clouds;
+
+        f.add(this._state, 'cloudNoiseScale', 0.5, 8.0, 0.1)
+            .name('Cell Scale')
+            .onChange(v => { if (clouds()) clouds()._uNoiseScale.value = v; });
+
+        f.add(this._state, 'cloudHeight', 0.5, 20.0, 0.1)
+            .name('Height')
+            .onChange(v => { if (clouds()) clouds()._uHeight.value = v; });
+
+        f.add(this._state, 'cloudThreshold', 0.0, 1.0, 0.01)
+            .name('Density')
+            .onChange(v => { if (clouds()) clouds()._uThreshold.value = v; });
+
+        f.add(this._state, 'cloudSpeed', 0.0, 0.5, 0.005)
+            .name('Anim Speed')
+            .onChange(v => { if (clouds()) clouds()._uSpeed.value = v; });
+
+        f.add(this._state, 'cloudOpacity', 0.0, 1.0, 0.01)
+            .name('Opacity')
+            .onChange(v => { if (clouds()) clouds()._uOpacity.value = v; });
+
+        f.add(this._state, 'cloudVolume', 0.0, 6.0, 0.1)
+            .name('Volume (bumps)')
+            .onChange(v => { if (clouds()) clouds()._uVolume.value = v; });
     }
 
     dispose() {
