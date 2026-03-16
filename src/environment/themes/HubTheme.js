@@ -18,6 +18,7 @@ import { Trampoline } from '../../entities/trampoline.js';
 import { Cassette } from '../../entities/cassette.js';
 import { JumpRope } from '../../entities/jumpRope.js';
 import { CloudLayer } from '../cloudLayer.js';
+import { HighStriker } from '../../entities/highStriker.js';
 
 
 const PC = new THREE.Vector3(0, -50, 0);
@@ -43,6 +44,7 @@ export class HubTheme extends BaseTheme {
         this._cassette = null;
         this._jumpRope = null;
         this._cloudLayer = null;
+        this._striker = null;
     }
 
     get spawnPoint() { return new THREE.Vector3(0, 1.5, 0); }
@@ -143,6 +145,14 @@ export class HubTheme extends BaseTheme {
         // ── Cloud Layer ───────────────────────────────────────────────────
         this._cloudLayer = new CloudLayer(scene);
         if (sceneSetup) sceneSetup.clouds = this._cloudLayer;
+
+        // ── High Striker ──────────────────────────────────────────────────
+        this._striker = new HighStriker(
+            scene,
+            new THREE.Vector3(14, 1, -6),
+            RAPIER,
+            rapierWorld
+        );
     }
 
 
@@ -172,6 +182,7 @@ export class HubTheme extends BaseTheme {
             this._trampoline?.update(dt ?? 0.016, player);
             this._cassette?.update(dt ?? 0.016);
             this._jumpRope?.update(dt ?? 0.016, player);
+            this._striker?.update(dt ?? 0.016, player);
         }
         this._cloudLayer?.update(time ?? 0);
     }
@@ -225,6 +236,7 @@ export class HubTheme extends BaseTheme {
         this._jumpRope?.dispose();
         this._cloudLayer?.dispose();
         if (this.sceneSetup) this.sceneSetup.clouds = null;
+        this._striker?.dispose();
         super.dispose();
     }
 
