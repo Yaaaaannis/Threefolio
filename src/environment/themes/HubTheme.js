@@ -132,9 +132,16 @@ export class HubTheme extends BaseTheme {
 
         // ── JumpRope ──────────────────────────────────────────────────────
         // Placed in front of the cassette (offset along Z/X)
+        this._jumpCount = 0;
         this._jumpRope = new JumpRope(scene, new THREE.Vector3(6, 2, 14), {
             onJumpSuccess: () => {
+                this._jumpCount++;
                 this._cassette?.triggerSuccessGlimmer();
+                this._cassette?.setCount(this._jumpCount);
+            },
+            onJumpFail: () => {
+                this._jumpCount = 0;
+                this._cassette?.triggerFailFlash();
             }
         });
 

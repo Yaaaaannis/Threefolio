@@ -14,6 +14,7 @@ export class JumpRope {
     constructor(scene, position, options = {}) {
         this._scene = scene;
         this._onJumpSuccess = options.onJumpSuccess || null;
+        this._onJumpFail    = options.onJumpFail    || null;
         this._wasInDanger = false;
 
         // Planet alignment
@@ -127,6 +128,8 @@ export class JumpRope {
             const jumped = !player._onGround;
             if (jumped) {
                 this._onJumpSuccess?.();
+            } else {
+                this._onJumpFail?.();
             }
         }
 

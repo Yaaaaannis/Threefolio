@@ -63,7 +63,7 @@ export class DebugGui {
 
             // Clouds
             cloudNoiseScale: 2.4,
-            cloudHeight:     20.0,
+            cloudHeight:     25.0,
             cloudThreshold:  0.52,
             cloudSpeed:      0.035,
             cloudOpacity:    0.93,
@@ -79,6 +79,7 @@ export class DebugGui {
         this._buildChimneyOutlineFolder();
         this._buildLampOutlineFolder();
         this._buildCloudFolder();
+        this._buildCassetteFolder();
     }
 
     // ── Bloom ──────────────────────────────────────────────────────────────
@@ -322,7 +323,7 @@ export class DebugGui {
             .name('Cell Scale')
             .onChange(v => { if (clouds()) clouds()._uNoiseScale.value = v; });
 
-        f.add(this._state, 'cloudHeight', 0.5, 20.0, 0.1)
+        f.add(this._state, 'cloudHeight', 0.5, 60.0, 0.1)
             .name('Height')
             .onChange(v => { if (clouds()) clouds()._uHeight.value = v; });
 
@@ -341,6 +342,21 @@ export class DebugGui {
         f.add(this._state, 'cloudVolume', 0.0, 6.0, 0.1)
             .name('Volume (bumps)')
             .onChange(v => { if (clouds()) clouds()._uVolume.value = v; });
+    }
+
+    // ── Cassette ──────────────────────────────────────────────────────────
+
+    _buildCassetteFolder() {
+        const f = this._gui.addFolder('📼 Cassette');
+        f.open();
+
+        const actions = {
+            smokeBurst: () => window.cassette?.triggerSmokeBurst(),
+            aiguille:   () => window.cassette?.triggerSuccessGlimmer(),
+        };
+
+        f.add(actions, 'smokeBurst').name('💨 Smoke Burst');
+        f.add(actions, 'aiguille').name('🔴 Aiguille Kick');
     }
 
     dispose() {
