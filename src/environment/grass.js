@@ -244,8 +244,8 @@ export class Grass {
                 cubePush.mul(this.cubeStrength).mul(tipness).y
             ));
 
-            // Hide (far above or below) if outside patch
-            vertexPosition.y.addAssign(hidden.mul(-100));
+            // Hide by pushing far beyond the far clip plane → triangle entirely culled
+            vertexPosition.y.addAssign(hidden.mul(-99999));
 
             return vertexPosition;
         })();

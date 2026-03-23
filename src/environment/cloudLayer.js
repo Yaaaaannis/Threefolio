@@ -76,7 +76,7 @@ export class CloudLayer {
         const mat = new MeshBasicNodeMaterial({
             transparent: true,
             depthWrite:  false,
-            side:        THREE.DoubleSide,
+            side:        THREE.BackSide,
         });
         mat.colorNode    = cloudColor;
         mat.opacityNode  = cloudMask.mul(this._uOpacity);

@@ -31,7 +31,7 @@ export class SceneSetup {
             45,
             window.innerWidth / window.innerHeight,
             0.1,
-            200
+            500
         );
         this._camOffset = new THREE.Vector3(
             CAM_DISTANCE * Math.sin(ISO_ANGLE),
